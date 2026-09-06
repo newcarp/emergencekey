@@ -1,0 +1,21 @@
+# Local HTTPS certs / private keys
+.certs/
+
+# Local env (use .env.example as the template)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+.cursor/

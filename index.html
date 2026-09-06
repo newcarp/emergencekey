@@ -1,0 +1,1324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0b0d10">
+  <title>EmergenceKey</title>
+  <style>
+    :root {
+      --bg: #0b0d10;
+      --panel: #151a22;
+      --panel-2: #1c232e;
+      --border: #2c3544;
+      --text: #e8edf5;
+      --muted: #8b95a8;
+      --accent: #3dffa8;
+      --accent-dim: #1a4d38;
+      --warn: #ffcc66;
+      --danger: #ff5c7a;
+      --blue: #6cb6ff;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      overscroll-behavior: none;
+      touch-action: manipulation;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      overflow: hidden;
+      padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+      gap: 6px;
+    }
+    button, textarea { font: inherit; color: inherit; }
+    button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+
+    .bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 6px 8px;
+      flex-shrink: 0;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+    .dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #6b7380;
+      flex-shrink: 0;
+    }
+    .dot.connecting { background: var(--warn); animation: pulse 1s ease-in-out infinite; }
+    .dot.connected { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+    .dot.error { background: var(--danger); }
+    @keyframes pulse { 50% { opacity: .35; } }
+    #statusText {
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #devName { color: var(--muted); font-weight: 500; font-size: 12px; }
+    .bar-btns { display: flex; gap: 6px; flex-shrink: 0; }
+    .btn {
+      min-height: 40px;
+      padding: 0 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-2);
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .btn.primary { background: var(--accent); color: #04140c; border-color: var(--accent); }
+    .btn.danger { background: #3a1520; color: var(--danger); border-color: #5a2233; }
+    .btn.on { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+    @media (max-width: 560px) {
+      .bar {
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: stretch;
+      }
+      .status {
+        flex: 1 1 100%;
+        min-height: 28px;
+      }
+      .bar-btns {
+        flex: 1 1 100%;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .bar-btns .btn {
+        flex: 1 1 calc(50% - 3px);
+        min-width: 0;
+        padding: 0 8px;
+        font-size: 13px;
+        order: 3;
+      }
+      #btnConn {
+        order: 1;
+        flex: 1 1 100%;
+      }
+      #btnRe {
+        order: 2;
+        flex: 1 1 100%;
+      }
+      .modgrid {
+        flex: 3.4;
+        min-width: 116px;
+      }
+      .modgrid .key {
+        font-size: 13px;
+        min-height: 42px;
+      }
+      .key.space { flex: 4.5; }
+      .arrows {
+        flex: 0 0 104px;
+        width: 104px;
+      }
+      textarea {
+        min-height: 120px;
+        height: auto;
+      }
+    }
+
+    .warn {
+      display: none;
+      font-size: 10px;
+      line-height: 1.3;
+      color: var(--warn);
+      background: #2a2210;
+      border: 1px solid #5a4a20;
+      border-radius: 8px;
+      padding: 4px 8px;
+      flex-shrink: 0;
+    }
+    .warn.show { display: block; }
+
+    .kb {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+      touch-action: manipulation;
+    }
+    .qwerty-wrap {
+      display: grid;
+      grid-template-rows: 1fr;
+      transition: grid-template-rows .38s cubic-bezier(.4, 0, .2, 1);
+    }
+    .kb.keys-hidden .qwerty-wrap {
+      grid-template-rows: 0fr;
+    }
+    .qwerty-wrap > .qwerty {
+      min-height: 0;
+      overflow: hidden;
+    }
+    .row { display: flex; gap: 3px; align-items: stretch; }
+    .qwerty {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      transform: translateY(0);
+      opacity: 1;
+      transition:
+        transform .38s cubic-bezier(.4, 0, .2, 1),
+        opacity .28s ease;
+    }
+    .kb.keys-hidden .qwerty {
+      transform: translateY(18px);
+      opacity: 0;
+      pointer-events: none;
+    }
+    .key {
+      flex: 1;
+      min-width: 0;
+      min-height: 32px;
+      border: 1.5px solid #5a6a82;
+      border-radius: 6px;
+      background: var(--panel-2);
+      font-weight: 700;
+      font-size: 12px;
+      padding: 0 2px;
+      -webkit-appearance: none;
+      appearance: none;
+      touch-action: manipulation;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      transition:
+        background .18s ease,
+        color .18s ease,
+        border-color .18s ease,
+        box-shadow .18s ease;
+    }
+    .key.on { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+    .key:active,
+    .key.pressed {
+      transition-duration: 0s;
+      background: var(--accent);
+      color: #04140c;
+      border-color: var(--accent);
+      box-shadow: 0 0 14px 2px rgba(61, 255, 168, .65);
+    }
+    .key.wide { flex: 1.7; }
+    .key.wide2 { flex: 2.3; }
+    .key.space { flex: 8; }
+    .key.del { flex: 1.4; }
+    .toprow .key { flex: 1; font-size: 10px; min-height: 28px; }
+    .bottomrow { align-items: stretch; }
+    .modgrid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      grid-template-rows: 1fr 1fr;
+      gap: 3px;
+      flex: 2.2;
+    }
+    .modgrid .key {
+      font-size: 11px;
+      letter-spacing: -0.02em;
+    }
+    .arrows {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: 1fr 1fr;
+      gap: 3px;
+      flex: 0 0 118px;
+      width: 118px;
+    }
+    .arrows .key { min-height: 0; font-size: 16px; line-height: 1; }
+    .arrows .key.fn-label { font-size: 10px; font-weight: 800; }
+    .arrows .up { grid-column: 2; grid-row: 1; }
+    .arrows .left { grid-column: 1; grid-row: 2; }
+    .arrows .down { grid-column: 2; grid-row: 2; }
+    .arrows .right { grid-column: 3; grid-row: 2; }
+    textarea {
+      width: 100%;
+      min-height: 38px;
+      height: 38px;
+      max-height: 40vh;
+      resize: none;
+      overflow-y: auto;
+      background: #0e1218;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 16px;
+      line-height: 1.35;
+      field-sizing: content;
+    }
+    .send-row { display: flex; gap: 6px; }
+    .send-row .btn { flex: 1; }
+
+    #pad {
+      flex: 1 1 auto;
+      min-height: 64px;
+      position: relative;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background:
+        radial-gradient(ellipse at 50% 30%, #1a2433 0%, #0d1117 70%);
+      touch-action: none;
+      user-select: none;
+      overflow: hidden;
+    }
+    #pad.down { border-color: var(--blue); }
+    #pad.dragging { border-color: var(--accent); }
+    .btn.capture { background: var(--panel-2); border-color: var(--blue); color: var(--blue); }
+    .btn.capture.on {
+      background: var(--panel-2);
+      color: var(--blue);
+      border-color: var(--blue);
+      animation: captureGlow 2.4s ease-in-out infinite;
+    }
+    @keyframes captureGlow {
+      0%, 100% {
+        box-shadow: 0 0 0 0 transparent;
+        filter: brightness(1);
+      }
+      50% {
+        box-shadow: 0 0 14px 2px rgba(108, 182, 255, .55);
+        filter: brightness(1.25);
+      }
+    }
+    .pad-hint {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      pointer-events: none;
+      color: var(--muted);
+      text-align: center;
+      padding: 16px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    .pad-hint b { color: var(--text); font-size: 12px; letter-spacing: .12em; }
+    .finger {
+      position: absolute;
+      width: 44px; height: 44px;
+      margin: -22px 0 0 -22px;
+      border-radius: 50%;
+      background: rgba(108, 182, 255, .28);
+      border: 2px solid var(--blue);
+      pointer-events: none;
+    }
+    .sens-wrap {
+      display: grid;
+      grid-template-rows: 1fr;
+      transition:
+        grid-template-rows .38s cubic-bezier(.4, 0, .2, 1),
+        margin-bottom .38s cubic-bezier(.4, 0, .2, 1);
+      flex-shrink: 0;
+      margin-bottom: 0;
+    }
+    .sens-wrap.hidden {
+      grid-template-rows: 0fr;
+      margin-bottom: -6px;
+    }
+    .sens-wrap > .sens {
+      min-height: 0;
+      overflow: hidden;
+    }
+    .sens {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 4px 10px;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 600;
+      opacity: 1;
+      transform: translateY(0);
+      transition:
+        transform .38s cubic-bezier(.4, 0, .2, 1),
+        opacity .28s ease,
+        border-color .28s ease,
+        background-color .28s ease;
+    }
+    .sens-wrap.hidden > .sens {
+      opacity: 0;
+      transform: translateY(-10px);
+      pointer-events: none;
+      border-color: transparent;
+      background: transparent;
+    }
+    .sens label { flex-shrink: 0; letter-spacing: .04em; }
+    .sens input[type="range"] {
+      flex: 1;
+      min-width: 0;
+      accent-color: var(--accent);
+      height: 28px;
+    }
+    #sensVal {
+      flex-shrink: 0;
+      min-width: 2.6em;
+      text-align: right;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    #unsupported {
+      display: none;
+      flex-shrink: 0;
+      background: #3a1520;
+      color: #ffd0d8;
+      border: 1px solid #5a2233;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 13px;
+    }
+    #unsupported.show { display: block; }
+    @media (min-height: 820px) {
+      .key { min-height: 40px; font-size: 14px; }
+      .toprow .key { min-height: 32px; font-size: 12px; }
+      .arrows .key { font-size: 20px; }
+      textarea { min-height: 56px; height: auto; }
+      .btn { min-height: 44px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="unsupported"></div>
+
+  <div class="bar">
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <div style="min-width:0">
+        <div id="statusText">disconnected</div>
+        <div id="devName"></div>
+      </div>
+    </div>
+    <div class="bar-btns">
+      <button class="btn" id="btnKb" title="Show / hide keyboard">Show keys</button>
+      <button class="btn" id="btnSens" title="Show / hide mouse speed">Mouse speed</button>
+      <button class="btn capture" id="btnCapture" hidden>Capture</button>
+      <button class="btn" id="btnRe" hidden>Reconnect</button>
+      <button class="btn primary" id="btnConn">Connect</button>
+    </div>
+  </div>
+
+  <div class="warn" id="warnText"></div>
+
+  <div class="sens-wrap hidden" id="sensRow">
+    <div class="sens">
+      <label for="sens">Mouse speed</label>
+      <input type="range" id="sens" min="0.25" max="4" step="0.05" value="1">
+      <span id="sensVal">1.00×</span>
+    </div>
+  </div>
+
+  <div id="pad">
+    <div class="pad-hint">
+      <b>TRACKPAD</b>
+      <span>1 finger: move / tap-click<br>2 fingers: scroll / tap-right-click<br>Double-tap-hold: drag &nbsp;·&nbsp; Desktop: wheel + right-click</span>
+    </div>
+  </div>
+
+  <div class="kb keys-hidden" id="kb">
+    <div class="qwerty-wrap">
+    <div class="qwerty">
+      <div class="row toprow">
+        <button class="key" data-key="0x29">Esc</button>
+        <button class="key" data-key="0x3A">F1</button>
+        <button class="key" data-key="0x3B">F2</button>
+        <button class="key" data-key="0x3C">F3</button>
+        <button class="key" data-key="0x3D">F4</button>
+        <button class="key" data-key="0x3E">F5</button>
+        <button class="key" data-key="0x3F">F6</button>
+        <button class="key" data-key="0x40">F7</button>
+        <button class="key" data-key="0x41">F8</button>
+        <button class="key" data-key="0x42">F9</button>
+        <button class="key" data-key="0x43">F10</button>
+        <button class="key" data-key="0x44">F11</button>
+        <button class="key" data-key="0x45">F12</button>
+      </div>
+      <div class="row">
+        <button class="key ck" data-key="0x35">`</button>
+        <button class="key ck" data-key="0x1E">1</button>
+        <button class="key ck" data-key="0x1F">2</button>
+        <button class="key ck" data-key="0x20">3</button>
+        <button class="key ck" data-key="0x21">4</button>
+        <button class="key ck" data-key="0x22">5</button>
+        <button class="key ck" data-key="0x23">6</button>
+        <button class="key ck" data-key="0x24">7</button>
+        <button class="key ck" data-key="0x25">8</button>
+        <button class="key ck" data-key="0x26">9</button>
+        <button class="key ck" data-key="0x27">0</button>
+        <button class="key ck" data-key="0x2D">-</button>
+        <button class="key ck" data-key="0x2E">=</button>
+        <button class="key wide" data-key="0x2A">⌫</button>
+      </div>
+      <div class="row">
+        <button class="key wide" data-key="0x2B">Tab</button>
+        <button class="key ck" data-key="0x14">Q</button>
+        <button class="key ck" data-key="0x1A">W</button>
+        <button class="key ck" data-key="0x08">E</button>
+        <button class="key ck" data-key="0x15">R</button>
+        <button class="key ck" data-key="0x17">T</button>
+        <button class="key ck" data-key="0x1C">Y</button>
+        <button class="key ck" data-key="0x18">U</button>
+        <button class="key ck" data-key="0x0C">I</button>
+        <button class="key ck" data-key="0x12">O</button>
+        <button class="key ck" data-key="0x13">P</button>
+        <button class="key ck" data-key="0x2F">[</button>
+        <button class="key ck" data-key="0x30">]</button>
+        <button class="key ck" data-key="0x31">\</button>
+      </div>
+      <div class="row">
+        <button class="key wide" id="keyCaps" data-key="0x39">Caps</button>
+        <button class="key ck" data-key="0x04">A</button>
+        <button class="key ck" data-key="0x16">S</button>
+        <button class="key ck" data-key="0x07">D</button>
+        <button class="key ck" data-key="0x09">F</button>
+        <button class="key ck" data-key="0x0A">G</button>
+        <button class="key ck" data-key="0x0B">H</button>
+        <button class="key ck" data-key="0x0D">J</button>
+        <button class="key ck" data-key="0x0E">K</button>
+        <button class="key ck" data-key="0x0F">L</button>
+        <button class="key ck" data-key="0x33">;</button>
+        <button class="key ck" data-key="0x34">'</button>
+        <button class="key wide2" data-key="0x28">Enter</button>
+      </div>
+      <div class="row">
+        <button class="key wide" data-mod="2">Shift</button>
+        <button class="key ck" data-key="0x1D">Z</button>
+        <button class="key ck" data-key="0x1B">X</button>
+        <button class="key ck" data-key="0x06">C</button>
+        <button class="key ck" data-key="0x19">V</button>
+        <button class="key ck" data-key="0x05">B</button>
+        <button class="key ck" data-key="0x11">N</button>
+        <button class="key ck" data-key="0x10">M</button>
+        <button class="key ck" data-key="0x36">,</button>
+        <button class="key ck" data-key="0x37">.</button>
+        <button class="key ck" data-key="0x38">/</button>
+        <button class="key wide" data-mod="2">Shift</button>
+      </div>
+      <div class="row bottomrow">
+        <div class="grid modgrid">
+          <button class="key" data-mod="1">Ctrl</button>
+          <button class="key" data-mod="8">Meta</button>
+          <button class="key" data-mod="4">Alt</button>
+          <button class="key" id="btnFn">Fn</button>
+        </div>
+        <button class="key ck space" data-key="0x2C">Space</button>
+        <button class="key del" data-key="0x4C">Del</button>
+        <div class="arrows">
+          <button class="key up" data-key="0x52" data-key-fn="0x4B">↑</button>
+          <button class="key left" data-key="0x50" data-key-fn="0x4A">←</button>
+          <button class="key down" data-key="0x51" data-key-fn="0x4E">↓</button>
+          <button class="key right" data-key="0x4F" data-key-fn="0x4D">→</button>
+        </div>
+      </div>
+    </div>
+    </div>
+    <textarea id="text" placeholder="Type or paste, then Send. Enter sends + Return on the target." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+    <div class="send-row">
+      <button class="btn primary" id="btnSend">Send</button>
+    </div>
+  </div>
+
+<script src="https://beacio.com/beacio.js"></script>
+<script>
+(() => {
+  const SERVICE = '2d2a0001-8a5a-4e76-a2e3-1e57d9a1b001';
+  const WRITE   = '2d2a0002-8a5a-4e76-a2e3-1e57d9a1b001';
+  const GAP_MS  = 12;
+  // Default ATT MTU is 23 → 20-byte payload. Firmware accepts batched 3-byte v1 frames.
+  const MAX_PACKET = 18;
+  const WRITE_RETRIES = 3;
+  const STORE   = 'emergencekey-device-id';
+  const STORE_SENS = 'emergencekey-mouse-sens';
+
+  const $ = (id) => document.getElementById(id);
+  const dot = $('dot'), statusText = $('statusText'), devName = $('devName');
+  const btnConn = $('btnConn'), btnRe = $('btnRe'), btnSend = $('btnSend');
+  const btnCapture = $('btnCapture'), btnKb = $('btnKb'), btnSens = $('btnSens'), warnText = $('warnText');
+  const textEl = $('text'), pad = $('pad'), unsupported = $('unsupported'), kb = $('kb');
+  const sensEl = $('sens'), sensVal = $('sensVal'), sensRow = $('sensRow');
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const ble = () => navigator.bluetooth || navigator.beacio || null;
+  const realBle = () => {
+    const b = ble();
+    return !!(b && typeof b.requestDevice === 'function' && !b.__beacioCDNStub);
+  };
+
+  let device = null, characteristic = null, connected = false;
+  let stickyMod = 0;
+  const queue = [];
+  let pumping = false;
+
+  const KEY = Object.create(null);
+  'abcdefghijklmnopqrstuvwxyz'.split('').forEach((c, i) => {
+    KEY[c] = [0x00, 0x04 + i];
+    KEY[c.toUpperCase()] = [0x02, 0x04 + i];
+  });
+  '123456789'.split('').forEach((c, i) => { KEY[c] = [0x00, 0x1E + i]; });
+  KEY['0'] = [0x00, 0x27];
+  '!@#$%^&*()'.split('').forEach((c, i) => {
+    KEY[c] = [0x02, i === 9 ? 0x27 : 0x1E + i];
+  });
+  Object.assign(KEY, {
+    ' ': [0x00, 0x2C], '\n': [0x00, 0x28], '\r': [0x00, 0x28], '\t': [0x00, 0x2B],
+    '-': [0x00, 0x2D], '_': [0x02, 0x2D], '=': [0x00, 0x2E], '+': [0x02, 0x2E],
+    '[': [0x00, 0x2F], '{': [0x02, 0x2F], ']': [0x00, 0x30], '}': [0x02, 0x30],
+    '\\': [0x00, 0x31], '|': [0x02, 0x31],
+    ';': [0x00, 0x33], ':': [0x02, 0x33], "'": [0x00, 0x34], '"': [0x02, 0x34],
+    '`': [0x00, 0x35], '~': [0x02, 0x35], ',': [0x00, 0x36], '<': [0x02, 0x36],
+    '.': [0x00, 0x37], '>': [0x02, 0x37], '/': [0x00, 0x38], '?': [0x02, 0x38],
+  });
+
+  function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+  function sbyte(n) {
+    n = Math.max(-127, Math.min(127, Math.round(n)));
+    return n & 0xff;
+  }
+
+  function setStatus(state, detail) {
+    dot.className = 'dot' + (state === 'disconnected' ? '' : ' ' + state);
+    const labels = {
+      disconnected: 'disconnected',
+      connecting: 'connecting…',
+      connected: 'connected',
+      error: 'error',
+    };
+    statusText.textContent = detail || labels[state] || state;
+    btnConn.textContent = connected ? 'Disconnect' : 'Connect';
+    btnConn.className = 'btn ' + (connected ? 'danger' : 'primary');
+    btnConn.disabled = state === 'connecting';
+  }
+
+  function enqueue(bytes, coalesceType) {
+    if (coalesceType != null) {
+      const i = queue.findIndex((m) => m[0] === coalesceType);
+      if (i >= 0) queue[i] = bytes;
+      else queue.push(bytes);
+    } else {
+      queue.push(bytes);
+    }
+    pump();
+  }
+
+  function gattUp() {
+    return !!(connected && characteristic && device && device.gatt && device.gatt.connected);
+  }
+
+  async function writePacket(bytes) {
+    const c = characteristic;
+    if (!c) throw new Error('not connected');
+    // Prefer write-with-response: WRITE_NR floods iOS/NimBLE (~20–25 packets) and drops the link.
+    if (typeof c.writeValueWithResponse === 'function' && c.properties.write) {
+      await c.writeValueWithResponse(bytes);
+      return GAP_MS;
+    }
+    if (c.properties.write && typeof c.writeValue === 'function') {
+      await c.writeValue(bytes);
+      return GAP_MS;
+    }
+    await c.writeValueWithoutResponse(bytes);
+    return 40;
+  }
+
+  function takeChunk() {
+    const first = queue.shift();
+    if (!first) return null;
+    if (first.length !== 3) return first;
+    const parts = [first];
+    let size = first.length;
+    while (queue.length && queue[0].length === 3 && size + queue[0].length <= MAX_PACKET) {
+      parts.push(queue.shift());
+      size += 3;
+    }
+    if (parts.length === 1) return first;
+    const out = new Uint8Array(size);
+    let o = 0;
+    for (const p of parts) { out.set(p, o); o += p.length; }
+    return out;
+  }
+
+  async function pump() {
+    if (pumping) return;
+    pumping = true;
+    while (queue.length) {
+      if (!gattUp()) { queue.length = 0; break; }
+      const msg = takeChunk();
+      let retries = WRITE_RETRIES;
+      while (true) {
+        try {
+          const gap = await writePacket(msg);
+          await sleep(gap);
+          break;
+        } catch (err) {
+          console.warn('write failed', err);
+          if (!gattUp()) {
+            queue.length = 0;
+            if (connected) onDisconnected();
+            pumping = false;
+            return;
+          }
+          retries -= 1;
+          if (retries < 0) break;
+          await sleep(50);
+        }
+      }
+    }
+    pumping = false;
+  }
+
+  function send(type, b1, b2, coalesce) {
+    if (coalesce) {
+      const i = queue.findIndex((m) => m[0] === type);
+      if (i >= 0) {
+        const p = queue[i];
+        const x = (p[1] << 24 >> 24) + (b1 << 24 >> 24);
+        const y = (p[2] << 24 >> 24) + (b2 << 24 >> 24);
+        queue[i] = new Uint8Array([type, sbyte(x), sbyte(y)]);
+        pump();
+        return;
+      }
+    }
+    enqueue(new Uint8Array([type, b1 & 0xff, b2 & 0xff]), coalesce ? type : undefined);
+  }
+  function sendKey(hid, extraMod) {
+    send(0x01, (stickyMod | (extraMod || 0)) & 0xff, hid);
+  }
+  function sendClick(btn) { send(0x03, btn, 0x00); }
+
+  let mouseSens = 1;
+  let moveAccX = 0, moveAccY = 0;
+  function loadSens() {
+    try {
+      const v = parseFloat(localStorage.getItem(STORE_SENS));
+      if (Number.isFinite(v) && v >= 0.25 && v <= 4) mouseSens = v;
+    } catch (_) {}
+    sensEl.value = String(mouseSens);
+    sensVal.textContent = mouseSens.toFixed(2) + '×';
+  }
+  sensEl.addEventListener('input', () => {
+    mouseSens = Number(sensEl.value) || 1;
+    sensVal.textContent = mouseSens.toFixed(2) + '×';
+    try { localStorage.setItem(STORE_SENS, String(mouseSens)); } catch (_) {}
+  });
+  loadSens();
+
+  function sendMove(dx, dy) {
+    moveAccX += dx * mouseSens;
+    moveAccY += dy * mouseSens;
+    const ix = Math.trunc(moveAccX);
+    const iy = Math.trunc(moveAccY);
+    if (ix === 0 && iy === 0) return;
+    moveAccX -= ix;
+    moveAccY -= iy;
+    send(0x02, sbyte(ix), sbyte(iy), true);
+  }
+  function sendScroll(dx, dy) { send(0x04, sbyte(dx), sbyte(dy), true); }
+
+  function onDisconnected() {
+    connected = false;
+    characteristic = null;
+    queue.length = 0;
+    setStatus('disconnected', 'disconnected — link dropped');
+    devName.textContent = '';
+    refreshReconnect();
+    if (capturing) exitCapture();
+  }
+
+  function bindDevice(dev) {
+    device = dev;
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+    try { localStorage.setItem(STORE, device.id); } catch (_) {}
+  }
+
+  async function gattConnect(dev) {
+    setStatus('connecting');
+    bindDevice(dev);
+    const server = await dev.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE);
+    characteristic = await service.getCharacteristic(WRITE);
+    connected = true;
+    setStatus('connected');
+    devName.textContent = dev.name || 'EmergenceKey';
+    btnRe.hidden = true;
+  }
+
+  async function connect(scanAll) {
+    const api = ble();
+    if (!api || typeof api.requestDevice !== 'function') {
+      setStatus('error', ios ? 'enable beacio: aA → Extensions' : 'no Web Bluetooth');
+      showBleHelp();
+      return;
+    }
+    if (connected && device) {
+      try { device.gatt.disconnect(); } catch (_) {}
+      onDisconnected();
+      setStatus('disconnected');
+      return;
+    }
+    try {
+      setStatus('connecting');
+      const opts = scanAll
+        ? { acceptAllDevices: true, optionalServices: [SERVICE] }
+        : { filters: [{ services: [SERVICE] }] };
+      const dev = await api.requestDevice(opts);
+      await gattConnect(dev);
+    } catch (err) {
+      connected = false;
+      characteristic = null;
+      if (err && err.name === 'NotFoundError') {
+        setStatus('disconnected');
+      } else if (err && err.name === 'AbortError') {
+        setStatus('disconnected', 'beacio setup opened — come back and tap Connect');
+      } else {
+        setStatus('error', (err && err.message) || 'connect failed');
+      }
+    }
+  }
+
+  async function reconnect() {
+    const api = ble();
+    if (!api || !api.getDevices) return;
+    try {
+      setStatus('connecting');
+      const id = localStorage.getItem(STORE);
+      const list = await api.getDevices();
+      const dev = list.find((d) => d.id === id) || list[0];
+      if (!dev) throw new Error('no saved device');
+      await gattConnect(dev);
+    } catch (err) {
+      setStatus('error', (err && err.message) || 'reconnect failed');
+    }
+  }
+
+  let reGen = 0;
+  async function refreshReconnect() {
+    const gen = ++reGen;
+    let show = false;
+    const api = ble();
+    if (api && typeof api.getDevices === 'function' && !connected) {
+      try {
+        const id = localStorage.getItem(STORE);
+        if (id) {
+          const list = await api.getDevices();
+          show = list.some((d) => d.id === id);
+        }
+      } catch (_) {}
+    }
+    if (gen !== reGen) return;
+    btnRe.hidden = !show;
+  }
+
+  function fitTextBox() {
+    textEl.style.height = 'auto';
+    const max = Math.round(window.innerHeight * 0.4);
+    textEl.style.height = Math.min(textEl.scrollHeight, max) + 'px';
+  }
+  async function sendText(withEnter) {
+    const s = textEl.value;
+    if (!connected) { setStatus('error', 'not connected'); return; }
+    btnSend.disabled = true;
+    for (const ch of s) {
+      const pair = KEY[ch];
+      if (!pair) continue;
+      sendKey(pair[1], pair[0]);
+    }
+    if (withEnter) sendKey(0x28, 0);
+    textEl.value = '';
+    fitTextBox();
+    // Let the queue drain before re-enabling; approx.
+    const n = s.length + (withEnter ? 1 : 0);
+    const packets = Math.max(1, Math.ceil(n / (MAX_PACKET / 3)));
+    await sleep(Math.min(8000, packets * (GAP_MS + 40) + 80));
+    btnSend.disabled = false;
+    textEl.focus();
+  }
+
+  const FLASH_MS = 200;
+  const pressTimers = new WeakMap();
+  function setKeyPressed(btn, on) {
+    if (!btn) return;
+    const prev = pressTimers.get(btn);
+    if (prev) {
+      clearTimeout(prev);
+      pressTimers.delete(btn);
+    }
+    if (on) {
+      // Restart the class so Safari always paints a fresh flash.
+      btn.classList.remove('pressed');
+      void btn.offsetWidth;
+      btn.classList.add('pressed');
+      return;
+    }
+    pressTimers.set(btn, setTimeout(() => {
+      btn.classList.remove('pressed');
+      pressTimers.delete(btn);
+    }, FLASH_MS));
+  }
+  function flashKey(btn) {
+    setKeyPressed(btn, true);
+    setKeyPressed(btn, false);
+  }
+  function clearKeyPressed() {
+    document.querySelectorAll('.key.pressed').forEach((btn) => {
+      const prev = pressTimers.get(btn);
+      if (prev) {
+        clearTimeout(prev);
+        pressTimers.delete(btn);
+      }
+      btn.classList.remove('pressed');
+    });
+  }
+  function buttonsForHid(hid) {
+    return [...document.querySelectorAll('.key')].filter((btn) => {
+      const primary = btn.dataset.key;
+      const fn = btn.dataset.keyFn;
+      return (primary && Number(primary) === hid)
+        || (fn && Number(fn) === hid);
+    });
+  }
+  function highlightHid(hid, on) {
+    buttonsForHid(hid).forEach((btn) => setKeyPressed(btn, on));
+  }
+  function highlightMod(bit, on) {
+    document.querySelectorAll(`[data-mod="${bit}"]`).forEach((btn) => setKeyPressed(btn, on));
+  }
+    // iOS Safari: :active only applies after a touch listener exists.
+    document.addEventListener('touchstart', () => {}, { passive: true });
+    // Pinch-zoom still happens on iOS even with user-scalable=no.
+    document.addEventListener('gesturestart', (e) => e.preventDefault());
+    document.querySelectorAll('.key').forEach((btn) => {
+    let held = false;
+    const down = () => {
+      held = true;
+      setKeyPressed(btn, true);
+    };
+    const up = () => {
+      if (!held) return;
+      held = false;
+      setKeyPressed(btn, false);
+    };
+    // touchstart is the reliable press signal on Safari; pointer capture cancels there.
+    btn.addEventListener('touchstart', down, { passive: true });
+    // preventDefault kills double-tap zoom and the ghost click; we fire click ourselves.
+    btn.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      if (!held) return;
+      up();
+      btn.click();
+    }, { passive: false });
+    btn.addEventListener('touchcancel', up, { passive: true });
+    btn.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      down();
+    });
+    btn.addEventListener('mouseup', up);
+    btn.addEventListener('mouseleave', up);
+    btn.addEventListener('click', () => {
+      if (!held && !btn.classList.contains('pressed')) flashKey(btn);
+    });
+  });
+
+  function setModState(bit, on) {
+    document.querySelectorAll(`[data-mod="${bit}"]`).forEach((b) => b.classList.toggle('on', on));
+  }
+  document.querySelectorAll('[data-mod]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const bit = Number(btn.dataset.mod);
+      stickyMod ^= bit;
+      setModState(bit, !!(stickyMod & bit));
+    });
+  });
+
+  // Fn layer: remaps arrows to Home/End/PgUp/PgDn (separate from the F1–F12 row).
+  let fnActive = false;
+  const btnFn = $('btnFn'), keyCaps = $('keyCaps');
+  const arrowBtns = [...document.querySelectorAll('.arrows .key')];
+  const FN_ARROW_LABEL = { '0x4B': 'PgUp', '0x4A': 'Home', '0x4E': 'PgDn', '0x4D': 'End' };
+  function paintFnLayer() {
+    btnFn.classList.toggle('on', fnActive);
+    arrowBtns.forEach((btn) => {
+      const fnCode = btn.dataset.keyFn;
+      if (fnActive && fnCode) {
+        btn.textContent = FN_ARROW_LABEL[fnCode] || btn.textContent;
+        btn.classList.add('fn-label');
+      } else {
+        btn.textContent = btn.classList.contains('up') ? '↑'
+          : btn.classList.contains('left') ? '←'
+          : btn.classList.contains('down') ? '↓' : '→';
+        btn.classList.remove('fn-label');
+      }
+    });
+  }
+  btnFn.addEventListener('click', () => {
+    fnActive = !fnActive;
+    paintFnLayer();
+  });
+
+  document.querySelectorAll('[data-key]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const hid = Number(fnActive && btn.dataset.keyFn ? btn.dataset.keyFn : btn.dataset.key);
+      sendKey(hid, 0);
+      if (btn === keyCaps) keyCaps.classList.toggle('on');
+      // Character keys auto-release a tapped Shift, like a normal mobile keyboard.
+      // Ctrl/Alt/Meta stay sticky, and arrows/⌫ keep Shift (text selection, etc.).
+      if (btn.classList.contains('ck') && (stickyMod & 2)) {
+        stickyMod &= ~2;
+        setModState(2, false);
+      }
+    });
+  });
+  btnSend.addEventListener('click', () => sendText(false));
+  textEl.addEventListener('input', fitTextBox);
+  textEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendText(true);
+    }
+  });
+  fitTextBox();
+  btnConn.addEventListener('click', () => connect(false));
+  btnConn.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    connect(true);
+  });
+  btnRe.addEventListener('click', reconnect);
+  btnKb.addEventListener('click', () => {
+    const hidden = kb.classList.toggle('keys-hidden');
+    btnKb.classList.toggle('on', !hidden);
+    btnKb.textContent = hidden ? 'Show keys' : 'Hide keys';
+  });
+  // Desktop: show keys by default. Mobile keeps them hidden.
+  if (!ios && matchMedia('(pointer: fine)').matches) {
+    kb.classList.remove('keys-hidden');
+    btnKb.classList.add('on');
+    btnKb.textContent = 'Hide keys';
+  }
+  btnSens.addEventListener('click', () => {
+    const hidden = sensRow.classList.toggle('hidden');
+    btnSens.classList.toggle('on', !hidden);
+    btnSens.textContent = hidden ? 'Mouse speed' : 'Hide speed';
+  });
+
+  /* ---- trackpad ---- */
+  const TAP_PX = 14, TAP_MS = 300, DBL_MS = 340, SCROLL_DIV = 6;
+  const pts = new Map();
+  let maxPts = 0, travel = 0, started = 0, last = null, lastAvgY = 0;
+  let didScroll = false, ignoreTap = false, holdDrag = false, lastTap = 0;
+  let fingers = [];
+
+  function avgY() {
+    let s = 0;
+    for (const p of pts.values()) s += p.y;
+    return s / pts.size;
+  }
+  function paintFingers() {
+    fingers.forEach((n) => n.remove());
+    fingers = [];
+    const r = pad.getBoundingClientRect();
+    for (const p of pts.values()) {
+      const d = document.createElement('div');
+      d.className = 'finger';
+      d.style.left = (p.x - r.left) + 'px';
+      d.style.top = (p.y - r.top) + 'px';
+      pad.appendChild(d);
+      fingers.push(d);
+    }
+    pad.classList.toggle('down', pts.size > 0);
+  }
+  function endGesture() {
+    const dt = Date.now() - started;
+    const tap = travel < TAP_PX && dt < TAP_MS && !didScroll && !ignoreTap;
+    if (maxPts <= 1 && tap && !holdDrag) {
+      sendClick(0x01);
+      lastTap = Date.now();
+    } else if (maxPts >= 2 && tap) {
+      sendClick(0x02);
+    }
+    holdDrag = false;
+    pad.classList.remove('dragging');
+    pts.clear();
+    maxPts = 0;
+    travel = 0;
+    last = null;
+    didScroll = false;
+    ignoreTap = false;
+    paintFingers();
+  }
+
+  pad.addEventListener('pointerdown', (e) => {
+    if (capturing) return;
+    e.preventDefault();
+    pad.setPointerCapture(e.pointerId);
+    if (pts.size === 0) {
+      started = Date.now();
+      travel = 0;
+      didScroll = false;
+      ignoreTap = false;
+      if (Date.now() - lastTap < DBL_MS && e.button === 0) {
+        holdDrag = true;
+        pad.classList.add('dragging');
+        sendClick(0x01);
+      }
+    }
+    if (e.pointerType === 'mouse' && e.button === 2) {
+      sendClick(0x02);
+      ignoreTap = true;
+    }
+    if (e.pointerType === 'mouse' && e.button === 1) {
+      sendClick(0x04);
+      ignoreTap = true;
+    }
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    maxPts = Math.max(maxPts, pts.size);
+    if (pts.size === 1) last = { x: e.clientX, y: e.clientY };
+    if (pts.size >= 2) lastAvgY = avgY();
+    paintFingers();
+  });
+
+  pad.addEventListener('pointermove', (e) => {
+    if (capturing) return;
+    const p = pts.get(e.pointerId);
+    if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    travel += Math.hypot(dx, dy);
+    if (pts.size === 1 && last) {
+      const mx = e.clientX - last.x, my = e.clientY - last.y;
+      last = { x: e.clientX, y: e.clientY };
+      if (travel > TAP_PX && (Math.abs(mx) >= 1 || Math.abs(my) >= 1)) sendMove(mx, my);
+    } else if (pts.size >= 2) {
+      const y = avgY();
+      const sdy = (y - lastAvgY) / SCROLL_DIV;
+      lastAvgY = y;
+      if (Math.abs(sdy) >= 1) { didScroll = true; sendScroll(0, sdy); }
+    }
+    paintFingers();
+  });
+
+  function up(e) {
+    if (capturing) return;
+    if (!pts.has(e.pointerId)) return;
+    pts.delete(e.pointerId);
+    if (pts.size === 0) endGesture();
+    else {
+      last = [...pts.values()][0];
+      last = last ? { x: last.x, y: last.y } : null;
+      if (pts.size >= 2) lastAvgY = avgY();
+      paintFingers();
+    }
+  }
+  pad.addEventListener('pointerup', up);
+  pad.addEventListener('pointercancel', up);
+  pad.addEventListener('contextmenu', (e) => e.preventDefault());
+  pad.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    sendScroll(e.deltaX / 40, e.deltaY / 40);
+  }, { passive: false });
+
+  /* ---- VM-console style input capture (desktop only) ---- */
+  const CODE_HID = {
+    KeyA: 0x04, KeyB: 0x05, KeyC: 0x06, KeyD: 0x07, KeyE: 0x08, KeyF: 0x09, KeyG: 0x0A, KeyH: 0x0B,
+    KeyI: 0x0C, KeyJ: 0x0D, KeyK: 0x0E, KeyL: 0x0F, KeyM: 0x10, KeyN: 0x11, KeyO: 0x12, KeyP: 0x13,
+    KeyQ: 0x14, KeyR: 0x15, KeyS: 0x16, KeyT: 0x17, KeyU: 0x18, KeyV: 0x19, KeyW: 0x1A, KeyX: 0x1B,
+    KeyY: 0x1C, KeyZ: 0x1D,
+    Digit1: 0x1E, Digit2: 0x1F, Digit3: 0x20, Digit4: 0x21, Digit5: 0x22,
+    Digit6: 0x23, Digit7: 0x24, Digit8: 0x25, Digit9: 0x26, Digit0: 0x27,
+    Enter: 0x28, Escape: 0x29, Backspace: 0x2A, Tab: 0x2B, Space: 0x2C,
+    Minus: 0x2D, Equal: 0x2E, BracketLeft: 0x2F, BracketRight: 0x30, Backslash: 0x31,
+    Semicolon: 0x33, Quote: 0x34, Backquote: 0x35, Comma: 0x36, Period: 0x37, Slash: 0x38,
+    CapsLock: 0x39,
+    F1: 0x3A, F2: 0x3B, F3: 0x3C, F4: 0x3D, F5: 0x3E, F6: 0x3F,
+    F7: 0x40, F8: 0x41, F9: 0x42, F10: 0x43, F11: 0x44, F12: 0x45,
+    PrintScreen: 0x46, ScrollLock: 0x47, Pause: 0x48,
+    Insert: 0x49, Home: 0x4A, PageUp: 0x4B, Delete: 0x4C, End: 0x4D, PageDown: 0x4E,
+    ArrowRight: 0x4F, ArrowLeft: 0x50, ArrowDown: 0x51, ArrowUp: 0x52,
+  };
+  const MOD_BIT = {
+    ControlLeft: 1, ControlRight: 1, ShiftLeft: 2, ShiftRight: 2,
+    AltLeft: 4, AltRight: 4, MetaLeft: 8, MetaRight: 8,
+  };
+  const isDesktop = !ios && matchMedia('(pointer: fine)').matches
+    && 'requestPointerLock' in Element.prototype;
+
+  function paintPhysicalKey(e, down) {
+    if (e.repeat) return;
+    if (MOD_BIT[e.code]) {
+      highlightMod(MOD_BIT[e.code], down);
+      return;
+    }
+    const hid = CODE_HID[e.code];
+    if (hid) highlightHid(hid, down);
+  }
+  window.addEventListener('keydown', (e) => paintPhysicalKey(e, true));
+  window.addEventListener('keyup', (e) => paintPhysicalKey(e, false));
+
+  let capturing = false;
+  let liveMod = 0;
+
+  function onCapturedKeyDown(e) {
+    if (!capturing) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // Exit combo — Esc alone is reserved for the target (needs Keyboard Lock).
+    if (e.code === 'Escape' && e.ctrlKey && e.altKey && !e.metaKey && !e.shiftKey) {
+      exitCapture();
+      return;
+    }
+    if (MOD_BIT[e.code]) {
+      liveMod |= MOD_BIT[e.code];
+      highlightMod(MOD_BIT[e.code], true);
+      return;
+    }
+    const hid = CODE_HID[e.code];
+    if (hid) {
+      sendKey(hid, liveMod);
+      highlightHid(hid, true);
+    }
+  }
+  function onCapturedKeyUp(e) {
+    if (!capturing) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (MOD_BIT[e.code]) {
+      liveMod &= ~MOD_BIT[e.code];
+      highlightMod(MOD_BIT[e.code], false);
+      return;
+    }
+    const hid = CODE_HID[e.code];
+    if (hid) highlightHid(hid, false);
+  }
+  function onCapturedMouseMove(e) {
+    if (!capturing) return;
+    if (e.movementX || e.movementY) sendMove(e.movementX, e.movementY);
+  }
+  function onCapturedMouseDown(e) {
+    if (!capturing) return;
+    e.preventDefault();
+    sendClick(e.button === 2 ? 0x02 : e.button === 1 ? 0x04 : 0x01);
+  }
+
+  function exitCapture() {
+    if (!capturing) return;
+    capturing = false;
+    liveMod = 0;
+    clearKeyPressed();
+    window.removeEventListener('keydown', onCapturedKeyDown, true);
+    window.removeEventListener('keyup', onCapturedKeyUp, true);
+    pad.removeEventListener('mousemove', onCapturedMouseMove);
+    pad.removeEventListener('mousedown', onCapturedMouseDown);
+    btnCapture.classList.remove('on');
+    btnCapture.textContent = 'Capture';
+    warnText.classList.remove('show');
+    warnText.textContent = '';
+    if (document.pointerLockElement === pad) document.exitPointerLock();
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    if (navigator.keyboard && navigator.keyboard.unlock) {
+      try { navigator.keyboard.unlock(); } catch (_) {}
+    }
+  }
+
+  async function enterCapture() {
+    if (capturing) { exitCapture(); return; }
+    if (!connected) { setStatus('error', 'connect first'); return; }
+    // Whole-page fullscreen (not the pad) so layout stays the same; required for
+    // Keyboard Lock so Esc alone won't drop pointer lock.
+    try {
+      await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+    } catch (_) {}
+    try {
+      await pad.requestPointerLock({ unadjustedMovement: true });
+    } catch (_) {
+      try { await pad.requestPointerLock(); } catch (_) {
+        setStatus('error', 'pointer lock denied');
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        return;
+      }
+    }
+    if (navigator.keyboard && navigator.keyboard.lock) {
+      try { await navigator.keyboard.lock(); } catch (_) {}
+    }
+    capturing = true;
+    liveMod = 0;
+    btnCapture.classList.add('on');
+    btnCapture.textContent = 'Capturing…';
+    warnText.textContent = 'Capture active — keyboard & mouse go to the target. Press Ctrl+Alt+Esc to release.';
+    warnText.classList.add('show');
+    window.addEventListener('keydown', onCapturedKeyDown, true);
+    window.addEventListener('keyup', onCapturedKeyUp, true);
+    pad.addEventListener('mousemove', onCapturedMouseMove);
+    pad.addEventListener('mousedown', onCapturedMouseDown);
+  }
+
+  document.addEventListener('pointerlockchange', () => {
+    if (capturing && document.pointerLockElement !== pad) exitCapture();
+  });
+  document.addEventListener('fullscreenchange', () => {
+    if (capturing && !document.fullscreenElement) exitCapture();
+  });
+
+  if (isDesktop) {
+    btnCapture.hidden = false;
+    btnCapture.title = 'Capture keyboard + mouse like a VM console (Ctrl+Alt+Esc to release)';
+    btnCapture.addEventListener('click', enterCapture);
+  }
+
+  /* ---- boot ---- */
+  function showBleHelp() {
+    unsupported.classList.add('show');
+    if (!window.isSecureContext) {
+      unsupported.textContent = 'Web Bluetooth needs HTTPS (use serve.py locally, or a hosted HTTPS URL).';
+    } else if (ios) {
+      unsupported.innerHTML =
+        'Safari has no native Web Bluetooth. Tap <b>aA</b> (left of the URL) → Manage Extensions → enable <b>beacio</b> → Allow, then tap Connect.';
+    } else {
+      unsupported.textContent = 'This browser has no Web Bluetooth. Use Chrome/Edge (desktop or Android).';
+    }
+  }
+  function refreshBleBanner() {
+    if (realBle()) {
+      unsupported.classList.remove('show');
+      unsupported.textContent = '';
+      refreshReconnect();
+      return;
+    }
+    showBleHelp();
+    if (!connected) btnRe.hidden = true;
+  }
+  if (!ios) refreshBleBanner();
+  window.addEventListener('beacio:statechange', refreshBleBanner);
+  setTimeout(refreshBleBanner, 300);
+  setTimeout(refreshBleBanner, 1400);
+  btnConn.title = 'Click to connect. Right-click to scan all BLE devices.';
+  // iOS: banner skipped above; still probe reconnect once BLE polyfill may be ready.
+  if (ios) refreshReconnect();
+})();
+</script>
+</body>
+</html>
