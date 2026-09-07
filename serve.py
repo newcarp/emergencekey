@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Serve EmergenceKey over HTTPS (self-signed).
-HTTP cert-install port is for iPhone profile download.
+HTTP cert-install port is mainly for iPhone/iPad profile download.
 
 Copy .env.example → .env and set HOST (and optional EXTRA_SANS).
 """
@@ -111,9 +111,10 @@ def make_install_handler(host: str, https_port: int):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EmergenceKey cert</title>
 <body style="font:16px sans-serif;background:#0b0d10;color:#e8edf5;padding:24px;line-height:1.45">
-<h1 style="color:#3dffa8">Install cert, then use HTTPS</h1>
-<p>iPhone: tap <a href="/emergencekey.cer" style="color:#6cb6ff">emergencekey.cer</a> → Settings → Profile Downloaded → Install.
+<h1 style="color:#3dffa8">Then open HTTPS</h1>
+<p>iPhone / iPad: tap <a href="/emergencekey.cer" style="color:#6cb6ff">emergencekey.cer</a> → Settings → Profile Downloaded → Install.
 Then Settings → General → About → <b>Certificate Trust Settings</b> → enable EmergenceKey.</p>
+<p>Android / desktop: skip the cert and open HTTPS below; continue past the warning. The .cer is optional if you want it trusted.</p>
 <p>After that open:</p>
 <p><a href="https://{host}:{https_port}/" style="color:#3dffa8">https://{host}:{https_port}/</a></p>
 </body>"""

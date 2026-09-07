@@ -49,11 +49,11 @@ cp .env.example .env
 python3 serve.py
 ```
 
-Then:
+Then open the HTTPS URL in a Web Bluetooth browser and follow [Connecting](#connecting).
 
-1. On iPhone, open the HTTP cert page printed by the server, install `emergencekey.cer`, and enable trust under **Settings → General → About → Certificate Trust Settings**.
-2. Open the HTTPS URL in Safari (or another Web Bluetooth browser).
-3. Follow [Connecting](#connecting), then type / pointer away.
+**iPhone / iPad:** Safari will not click through a self-signed cert. Open the HTTP cert page printed by the server, install `emergencekey.cer`, then enable trust under **Settings → General → About → Certificate Trust Settings**. After that, open the HTTPS URL in Safari (with Beacio).
+
+**Android / desktop:** Chrome or Edge. Open the HTTPS URL and continue past the self-signed warning. Installing the cert is optional.
 
 `.env` and generated certs under `.certs/` stay local (gitignored).
 
