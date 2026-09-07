@@ -9,7 +9,7 @@ This repo is the **phone / laptop web UI**. It is half of the project. The USB d
 
 The dongle (a [Waveshare ESP32-S3-Zero](https://www.waveshare.com/esp32-s3-zero.htm)) talks BLE to the browser and presents as a real USB HID device on the target. No drivers or extra software on the target.
 
-**BLE is open (no pairing).** Treat this as an emergency / same-room tool, not a general-purpose wireless keyboard. On some BIOS screens the chip will take keyboard but not mouse.
+Treat this as an emergency / same-room tool, not a general-purpose wireless keyboard. On some BIOS screens the chip will take keyboard but not mouse.
 
 ## What you need
 
@@ -27,7 +27,19 @@ The dongle (a [Waveshare ESP32-S3-Zero](https://www.waveshare.com/esp32-s3-zero.
 
 Firefox and stock Safari have no Web Bluetooth. Opening `index.html` as a file will not work.
 
-## Quick start
+## Connecting
+
+1. Open the page and hit **Connect**.
+2. Pick **EmergenceKey** from the list.
+
+If nothing happens after hitting Connect (or the light stays yellow), the OS hasn't paired with the dongle yet. The page can't always summon the pairing dialog itself — on some OSes the browser can't raise the prompt, so you have to pair manually.
+
+- If a pairing prompt appears → tap through it once. After that, it reconnects silently.
+- If no prompt appears → pair EmergenceKey manually in your OS Bluetooth settings, then come back and hit **Connect** again.
+
+You should only have to go through the pairing step once. After that it should just work when you connect on the webpage.
+
+## Self Hosting Quick start
 
 ```bash
 cp .env.example .env
@@ -41,7 +53,7 @@ Then:
 
 1. On iPhone, open the HTTP cert page printed by the server, install `emergencekey.cer`, and enable trust under **Settings → General → About → Certificate Trust Settings**.
 2. Open the HTTPS URL in Safari (or another Web Bluetooth browser).
-3. Tap **Connect**, pick the EmergenceKey device, and type / pointer away.
+3. Follow [Connecting](#connecting), then type / pointer away.
 
 `.env` and generated certs under `.certs/` stay local (gitignored).
 

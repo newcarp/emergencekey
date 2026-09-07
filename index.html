@@ -287,6 +287,7 @@
     }
     #pad.down { border-color: var(--blue); }
     #pad.dragging { border-color: var(--accent); }
+    body.capturing { user-select: none; }
     .btn.capture { background: var(--panel-2); border-color: var(--blue); color: var(--blue); }
     .btn.capture.on {
       background: var(--panel-2);
@@ -1164,8 +1165,7 @@
     ControlLeft: 1, ControlRight: 1, ShiftLeft: 2, ShiftRight: 2,
     AltLeft: 4, AltRight: 4, MetaLeft: 8, MetaRight: 8,
   };
-  const isDesktop = !ios && matchMedia('(pointer: fine)').matches
-    && 'requestPointerLock' in Element.prototype;
+  const isDesktop = !ios && matchMedia('(pointer: fine)').matches;
 
   function paintPhysicalKey(e, down) {
     if (e.repeat) return;
@@ -1181,50 +1181,20 @@
 
   let capturing = false;
   let liveMod = 0;
-  const CAPTURE_HINT = 'Capture active — keyboard & mouse go to the target. Press Ctrl+Alt+Esc to release.';
-  const RELOCK_HINT = 'Capture still on — click the pad to re-lock the mouse. Ctrl+Alt+Esc to release.';
+  const CAPTURE_HINT = 'Capture active — keys and mouse over this window go to the target. Mouse stops at the window edge. Ctrl+Alt+Esc to release.';
 
   function isExitCombo(e) {
     return e.code === 'Escape' && e.ctrlKey && e.altKey && !e.metaKey && !e.shiftKey;
   }
 
-  async function requestKbLock() {
-    if (navigator.keyboard && navigator.keyboard.lock) {
-      try { await navigator.keyboard.lock(); } catch (_) {}
-    }
-  }
-
-  async function requestFs() {
-    const el = document.documentElement;
-    try {
-      await el.requestFullscreen({ navigationUI: 'hide', keyboardLock: 'browser' });
-    } catch (_) {
-      try { await el.requestFullscreen({ navigationUI: 'hide' }); } catch (_) {}
-    }
-  }
-
-  async function requestPtr() {
-    try {
-      await pad.requestPointerLock({ unadjustedMovement: true });
-    } catch (_) {
-      try { await pad.requestPointerLock(); } catch (_) { return false; }
-    }
-    return document.pointerLockElement === pad;
-  }
-
-  async function restoreCaptureLocks() {
-    if (!capturing) return;
-    if (!document.fullscreenElement) await requestFs();
-    if (document.fullscreenElement) await requestKbLock();
-    if (document.pointerLockElement !== pad) await requestPtr();
-    warnText.textContent = document.pointerLockElement === pad ? CAPTURE_HINT : RELOCK_HINT;
+  function isCaptureChrome(el) {
+    return !!(el && el.closest && el.closest('#btnCapture'));
   }
 
   function onCapturedKeyDown(e) {
     if (!capturing) return;
     e.preventDefault();
     e.stopPropagation();
-    // Only the combo leaves capture. Esc alone is sent to the target.
     if (isExitCombo(e)) {
       exitCapture();
       return;
@@ -1257,12 +1227,18 @@
     if (e.movementX || e.movementY) sendMove(e.movementX, e.movementY);
   }
   function onCapturedMouseDown(e) {
+    if (!capturing || isCaptureChrome(e.target)) return;
+    e.preventDefault();
+    sendClick(e.button === 2 ? 0x02 : e.button === 1 ? 0x04 : 0x01);
+  }
+  function onCapturedContextMenu(e) {
     if (!capturing) return;
     e.preventDefault();
-    if (document.pointerLockElement !== pad || !document.fullscreenElement) {
-      restoreCaptureLocks();
-    }
-    sendClick(e.button === 2 ? 0x02 : e.button === 1 ? 0x04 : 0x01);
+  }
+  function onCapturedWheel(e) {
+    if (!capturing) return;
+    e.preventDefault();
+    sendScroll(e.deltaX / 40, e.deltaY / 40);
   }
 
   function exitCapture() {
@@ -1270,65 +1246,38 @@
     capturing = false;
     liveMod = 0;
     clearKeyPressed();
+    document.body.classList.remove('capturing');
     window.removeEventListener('keydown', onCapturedKeyDown, true);
     window.removeEventListener('keyup', onCapturedKeyUp, true);
-    pad.removeEventListener('mousemove', onCapturedMouseMove);
-    pad.removeEventListener('mousedown', onCapturedMouseDown);
+    window.removeEventListener('mousemove', onCapturedMouseMove, true);
+    window.removeEventListener('mousedown', onCapturedMouseDown, true);
+    window.removeEventListener('contextmenu', onCapturedContextMenu, true);
+    window.removeEventListener('wheel', onCapturedWheel, { capture: true, passive: false });
     btnCapture.classList.remove('on');
     btnCapture.textContent = 'Capture';
     warnText.classList.remove('show');
     warnText.textContent = '';
-    if (document.pointerLockElement === pad) document.exitPointerLock();
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    if (navigator.keyboard && navigator.keyboard.unlock) {
-      try { navigator.keyboard.unlock(); } catch (_) {}
-    }
   }
 
-  async function enterCapture() {
+  function enterCapture() {
     if (capturing) { exitCapture(); return; }
     if (!connected) { setStatus('error', 'connect first'); return; }
-    // Keyboard Lock before fullscreen (spec), then pointer lock. Esc still
-    // drops pointer lock in current browsers — we do not treat that as exit.
-    await requestKbLock();
-    await requestFs();
-    if (document.fullscreenElement) await requestKbLock();
-    if (!await requestPtr()) {
-      setStatus('error', 'pointer lock denied');
-      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-      if (navigator.keyboard && navigator.keyboard.unlock) {
-        try { navigator.keyboard.unlock(); } catch (_) {}
-      }
-      return;
-    }
     capturing = true;
     liveMod = 0;
+    document.body.classList.add('capturing');
     btnCapture.classList.add('on');
     btnCapture.textContent = 'Capturing…';
+    btnCapture.blur();
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     warnText.textContent = CAPTURE_HINT;
     warnText.classList.add('show');
     window.addEventListener('keydown', onCapturedKeyDown, true);
     window.addEventListener('keyup', onCapturedKeyUp, true);
-    pad.addEventListener('mousemove', onCapturedMouseMove);
-    pad.addEventListener('mousedown', onCapturedMouseDown);
+    window.addEventListener('mousemove', onCapturedMouseMove, true);
+    window.addEventListener('mousedown', onCapturedMouseDown, true);
+    window.addEventListener('contextmenu', onCapturedContextMenu, true);
+    window.addEventListener('wheel', onCapturedWheel, { capture: true, passive: false });
   }
-
-  document.addEventListener('pointerlockchange', () => {
-    if (!capturing) return;
-    if (document.pointerLockElement === pad) {
-      warnText.textContent = CAPTURE_HINT;
-      return;
-    }
-    warnText.textContent = RELOCK_HINT;
-  });
-  document.addEventListener('fullscreenchange', () => {
-    if (!capturing) return;
-    if (document.fullscreenElement) {
-      requestKbLock();
-      return;
-    }
-    warnText.textContent = RELOCK_HINT;
-  });
 
   if (isDesktop) {
     btnCapture.hidden = false;
