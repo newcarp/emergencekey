@@ -1181,13 +1181,51 @@
 
   let capturing = false;
   let liveMod = 0;
+  const CAPTURE_HINT = 'Capture active — keyboard & mouse go to the target. Press Ctrl+Alt+Esc to release.';
+  const RELOCK_HINT = 'Capture still on — click the pad to re-lock the mouse. Ctrl+Alt+Esc to release.';
+
+  function isExitCombo(e) {
+    return e.code === 'Escape' && e.ctrlKey && e.altKey && !e.metaKey && !e.shiftKey;
+  }
+
+  async function requestKbLock() {
+    if (navigator.keyboard && navigator.keyboard.lock) {
+      try { await navigator.keyboard.lock(); } catch (_) {}
+    }
+  }
+
+  async function requestFs() {
+    const el = document.documentElement;
+    try {
+      await el.requestFullscreen({ navigationUI: 'hide', keyboardLock: 'browser' });
+    } catch (_) {
+      try { await el.requestFullscreen({ navigationUI: 'hide' }); } catch (_) {}
+    }
+  }
+
+  async function requestPtr() {
+    try {
+      await pad.requestPointerLock({ unadjustedMovement: true });
+    } catch (_) {
+      try { await pad.requestPointerLock(); } catch (_) { return false; }
+    }
+    return document.pointerLockElement === pad;
+  }
+
+  async function restoreCaptureLocks() {
+    if (!capturing) return;
+    if (!document.fullscreenElement) await requestFs();
+    if (document.fullscreenElement) await requestKbLock();
+    if (document.pointerLockElement !== pad) await requestPtr();
+    warnText.textContent = document.pointerLockElement === pad ? CAPTURE_HINT : RELOCK_HINT;
+  }
 
   function onCapturedKeyDown(e) {
     if (!capturing) return;
     e.preventDefault();
     e.stopPropagation();
-    // Exit combo — Esc alone is reserved for the target (needs Keyboard Lock).
-    if (e.code === 'Escape' && e.ctrlKey && e.altKey && !e.metaKey && !e.shiftKey) {
+    // Only the combo leaves capture. Esc alone is sent to the target.
+    if (isExitCombo(e)) {
       exitCapture();
       return;
     }
@@ -1221,6 +1259,9 @@
   function onCapturedMouseDown(e) {
     if (!capturing) return;
     e.preventDefault();
+    if (document.pointerLockElement !== pad || !document.fullscreenElement) {
+      restoreCaptureLocks();
+    }
     sendClick(e.button === 2 ? 0x02 : e.button === 1 ? 0x04 : 0x01);
   }
 
@@ -1247,28 +1288,24 @@
   async function enterCapture() {
     if (capturing) { exitCapture(); return; }
     if (!connected) { setStatus('error', 'connect first'); return; }
-    // Whole-page fullscreen (not the pad) so layout stays the same; required for
-    // Keyboard Lock so Esc alone won't drop pointer lock.
-    try {
-      await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
-    } catch (_) {}
-    try {
-      await pad.requestPointerLock({ unadjustedMovement: true });
-    } catch (_) {
-      try { await pad.requestPointerLock(); } catch (_) {
-        setStatus('error', 'pointer lock denied');
-        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-        return;
+    // Keyboard Lock before fullscreen (spec), then pointer lock. Esc still
+    // drops pointer lock in current browsers — we do not treat that as exit.
+    await requestKbLock();
+    await requestFs();
+    if (document.fullscreenElement) await requestKbLock();
+    if (!await requestPtr()) {
+      setStatus('error', 'pointer lock denied');
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      if (navigator.keyboard && navigator.keyboard.unlock) {
+        try { navigator.keyboard.unlock(); } catch (_) {}
       }
-    }
-    if (navigator.keyboard && navigator.keyboard.lock) {
-      try { await navigator.keyboard.lock(); } catch (_) {}
+      return;
     }
     capturing = true;
     liveMod = 0;
     btnCapture.classList.add('on');
     btnCapture.textContent = 'Capturing…';
-    warnText.textContent = 'Capture active — keyboard & mouse go to the target. Press Ctrl+Alt+Esc to release.';
+    warnText.textContent = CAPTURE_HINT;
     warnText.classList.add('show');
     window.addEventListener('keydown', onCapturedKeyDown, true);
     window.addEventListener('keyup', onCapturedKeyUp, true);
@@ -1277,10 +1314,20 @@
   }
 
   document.addEventListener('pointerlockchange', () => {
-    if (capturing && document.pointerLockElement !== pad) exitCapture();
+    if (!capturing) return;
+    if (document.pointerLockElement === pad) {
+      warnText.textContent = CAPTURE_HINT;
+      return;
+    }
+    warnText.textContent = RELOCK_HINT;
   });
   document.addEventListener('fullscreenchange', () => {
-    if (capturing && !document.fullscreenElement) exitCapture();
+    if (!capturing) return;
+    if (document.fullscreenElement) {
+      requestKbLock();
+      return;
+    }
+    warnText.textContent = RELOCK_HINT;
   });
 
   if (isDesktop) {
