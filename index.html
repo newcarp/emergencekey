@@ -287,7 +287,6 @@
     }
     #pad.down { border-color: var(--blue); }
     #pad.dragging { border-color: var(--accent); }
-    body.capturing { user-select: none; }
     .btn.capture { background: var(--panel-2); border-color: var(--blue); color: var(--blue); }
     .btn.capture.on {
       background: var(--panel-2);
@@ -1165,7 +1164,8 @@
     ControlLeft: 1, ControlRight: 1, ShiftLeft: 2, ShiftRight: 2,
     AltLeft: 4, AltRight: 4, MetaLeft: 8, MetaRight: 8,
   };
-  const isDesktop = !ios && matchMedia('(pointer: fine)').matches;
+  const isDesktop = !ios && matchMedia('(pointer: fine)').matches
+    && 'requestPointerLock' in Element.prototype;
 
   function paintPhysicalKey(e, down) {
     if (e.repeat) return;
@@ -1181,21 +1181,12 @@
 
   let capturing = false;
   let liveMod = 0;
-  const CAPTURE_HINT = 'Capture active — keys and mouse over this window go to the target. Mouse stops at the window edge. Ctrl+Alt+Esc to release.';
-
-  function isExitCombo(e) {
-    return e.code === 'Escape' && e.ctrlKey && e.altKey && !e.metaKey && !e.shiftKey;
-  }
-
-  function isCaptureChrome(el) {
-    return !!(el && el.closest && el.closest('#btnCapture'));
-  }
 
   function onCapturedKeyDown(e) {
     if (!capturing) return;
     e.preventDefault();
     e.stopPropagation();
-    if (isExitCombo(e)) {
+    if (e.code === 'Escape') {
       exitCapture();
       return;
     }
@@ -1214,6 +1205,7 @@
     if (!capturing) return;
     e.preventDefault();
     e.stopPropagation();
+    if (e.code === 'Escape') return;
     if (MOD_BIT[e.code]) {
       liveMod &= ~MOD_BIT[e.code];
       highlightMod(MOD_BIT[e.code], false);
@@ -1227,18 +1219,9 @@
     if (e.movementX || e.movementY) sendMove(e.movementX, e.movementY);
   }
   function onCapturedMouseDown(e) {
-    if (!capturing || isCaptureChrome(e.target)) return;
+    if (!capturing) return;
     e.preventDefault();
     sendClick(e.button === 2 ? 0x02 : e.button === 1 ? 0x04 : 0x01);
-  }
-  function onCapturedContextMenu(e) {
-    if (!capturing) return;
-    e.preventDefault();
-  }
-  function onCapturedWheel(e) {
-    if (!capturing) return;
-    e.preventDefault();
-    sendScroll(e.deltaX / 40, e.deltaY / 40);
   }
 
   function exitCapture() {
@@ -1246,42 +1229,55 @@
     capturing = false;
     liveMod = 0;
     clearKeyPressed();
-    document.body.classList.remove('capturing');
     window.removeEventListener('keydown', onCapturedKeyDown, true);
     window.removeEventListener('keyup', onCapturedKeyUp, true);
-    window.removeEventListener('mousemove', onCapturedMouseMove, true);
-    window.removeEventListener('mousedown', onCapturedMouseDown, true);
-    window.removeEventListener('contextmenu', onCapturedContextMenu, true);
-    window.removeEventListener('wheel', onCapturedWheel, { capture: true, passive: false });
+    pad.removeEventListener('mousemove', onCapturedMouseMove);
+    pad.removeEventListener('mousedown', onCapturedMouseDown);
     btnCapture.classList.remove('on');
     btnCapture.textContent = 'Capture';
     warnText.classList.remove('show');
     warnText.textContent = '';
+    if (document.pointerLockElement === pad) document.exitPointerLock();
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   }
 
-  function enterCapture() {
+  async function enterCapture() {
     if (capturing) { exitCapture(); return; }
     if (!connected) { setStatus('error', 'connect first'); return; }
+    try {
+      await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+    } catch (_) {}
+    try {
+      await pad.requestPointerLock({ unadjustedMovement: true });
+    } catch (_) {
+      try { await pad.requestPointerLock(); } catch (_) {
+        setStatus('error', 'pointer lock denied');
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        return;
+      }
+    }
     capturing = true;
     liveMod = 0;
-    document.body.classList.add('capturing');
     btnCapture.classList.add('on');
     btnCapture.textContent = 'Capturing…';
-    btnCapture.blur();
-    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-    warnText.textContent = CAPTURE_HINT;
+    warnText.textContent = 'Capture active — keyboard & mouse go to the target. Press Esc to release (use the on-screen Esc if the target needs it).';
     warnText.classList.add('show');
     window.addEventListener('keydown', onCapturedKeyDown, true);
     window.addEventListener('keyup', onCapturedKeyUp, true);
-    window.addEventListener('mousemove', onCapturedMouseMove, true);
-    window.addEventListener('mousedown', onCapturedMouseDown, true);
-    window.addEventListener('contextmenu', onCapturedContextMenu, true);
-    window.addEventListener('wheel', onCapturedWheel, { capture: true, passive: false });
+    pad.addEventListener('mousemove', onCapturedMouseMove);
+    pad.addEventListener('mousedown', onCapturedMouseDown);
   }
+
+  document.addEventListener('pointerlockchange', () => {
+    if (capturing && document.pointerLockElement !== pad) exitCapture();
+  });
+  document.addEventListener('fullscreenchange', () => {
+    if (capturing && !document.fullscreenElement) exitCapture();
+  });
 
   if (isDesktop) {
     btnCapture.hidden = false;
-    btnCapture.title = 'Capture keyboard + mouse like a VM console (Ctrl+Alt+Esc to release)';
+    btnCapture.title = 'Capture keyboard + mouse like a VM console (Esc to release)';
     btnCapture.addEventListener('click', enterCapture);
   }
 
