@@ -58,7 +58,17 @@
       gap: 8px;
       flex: 1;
       min-width: 0;
+      min-height: 40px;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-2);
+      text-align: left;
+      -webkit-appearance: none;
+      appearance: none;
     }
+    .status.is-connected { border-color: var(--accent-dim); }
+    .status.is-error { border-color: #5a2233; }
     .dot {
       width: 10px; height: 10px; border-radius: 50%;
       background: #6b7380;
@@ -99,7 +109,7 @@
       }
       .status {
         flex: 1 1 100%;
-        min-height: 28px;
+        min-height: 40px;
       }
       .bar-btns {
         flex: 1 1 100%;
@@ -113,14 +123,6 @@
         padding: 0 8px;
         font-size: 13px;
         order: 3;
-      }
-      #btnConn {
-        order: 1;
-        flex: 1 1 calc(50% - 3px);
-      }
-      #btnRe {
-        order: 2;
-        flex: 1 1 calc(50% - 3px);
       }
       .modgrid {
         flex: 3.4;
@@ -342,9 +344,44 @@
     .send-row { display: flex; gap: 6px; }
     .send-row .btn { flex: 1; }
 
-    #pad {
+    .pad-wrap {
       flex: 1 1 auto;
       min-height: 64px;
+      display: grid;
+      grid-template-rows: 1fr;
+      transition:
+        grid-template-rows .38s cubic-bezier(.4, 0, .2, 1),
+        min-height .38s cubic-bezier(.4, 0, .2, 1);
+    }
+    .pad-wrap.hidden {
+      flex: 0 0 0;
+      min-height: 0;
+      max-height: 0;
+      grid-template-rows: 0fr;
+      overflow: hidden;
+      margin-bottom: -6px;
+    }
+    .pad-wrap > #pad {
+      min-height: 0;
+      overflow: hidden;
+    }
+    .pad-wrap.hidden > #pad {
+      pointer-events: none;
+      border-color: transparent;
+    }
+    .pad-wrap.hidden ~ #kb {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .pad-wrap.hidden ~ #kb:not(.media-hidden) .media-wrap {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .pad-wrap.hidden ~ #kb:not(.media-hidden) .media-clip,
+    .pad-wrap.hidden ~ #kb:not(.media-hidden) .media-pad {
+      height: 100%;
+    }
+    #pad {
       position: relative;
       border-radius: 16px;
       border: 1px solid var(--border);
@@ -493,21 +530,20 @@
   <div id="unsupported"></div>
 
   <div class="bar">
-    <div class="status">
+    <button type="button" class="status" id="btnConn" title="Tap to connect. Hold / right-click to scan all.">
       <span class="dot" id="dot"></span>
       <div style="min-width:0">
         <div id="statusText">disconnected</div>
-        <div id="devName"></div>
+        <div id="devName">tap to connect</div>
       </div>
-    </div>
+    </button>
     <div class="bar-btns">
+      <button class="btn on" id="btnPad" title="Show / hide trackpad">Hide trackpad</button>
       <button class="btn" id="btnKb" title="Show / hide keyboard">Show keys</button>
-      <button class="btn" id="btnFkeys" title="Show / hide Esc and F1–F12">Show F keys</button>
       <button class="btn" id="btnMedia" title="Show / hide media controls">Show media</button>
+      <button class="btn" id="btnFkeys" title="Show / hide Esc and F1–F12">Show F keys</button>
       <button class="btn" id="btnSens" title="Show / hide mouse speed">Mouse speed</button>
       <button class="btn capture" id="btnCapture" hidden>Capture</button>
-      <button class="btn" id="btnRe" hidden>Reconnect</button>
-      <button class="btn primary" id="btnConn">Connect</button>
     </div>
   </div>
 
@@ -521,12 +557,14 @@
     </div>
   </div>
 
+  <div class="pad-wrap" id="padWrap">
   <div id="pad">
     <div class="pad-hint">
       <b>TRACKPAD</b>
       <span class="hint-touch">1 finger: move / tap-click<br>2 fingers: scroll / tap-right-click<br>Double-tap-hold: drag</span>
       <span class="hint-desk">Move / Click / Scroll<br>Double click and hold to drag</span>
     </div>
+  </div>
   </div>
 
   <div class="kb keys-hidden media-hidden fkeys-hidden" id="kb">
@@ -663,10 +701,13 @@
 
   const $ = (id) => document.getElementById(id);
   const dot = $('dot'), statusText = $('statusText'), devName = $('devName');
-  const btnConn = $('btnConn'), btnRe = $('btnRe'), btnSend = $('btnSend');
-  const btnCapture = $('btnCapture'), btnKb = $('btnKb'), btnFkeys = $('btnFkeys'), btnMedia = $('btnMedia');
+  const btnConn = $('btnConn'), btnSend = $('btnSend');
+  let canReconnect = false;
+  const btnCapture = $('btnCapture'), btnKb = $('btnKb'), btnFkeys = $('btnFkeys');
+  const btnMedia = $('btnMedia'), btnPad = $('btnPad');
   const btnSens = $('btnSens'), warnText = $('warnText');
-  const textEl = $('text'), pad = $('pad'), unsupported = $('unsupported'), kb = $('kb');
+  const textEl = $('text'), pad = $('pad'), padWrap = $('padWrap');
+  const unsupported = $('unsupported'), kb = $('kb');
   const sensEl = $('sens'), sensVal = $('sensVal'), sensRow = $('sensRow');
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
   document.documentElement.classList.toggle(
@@ -719,9 +760,18 @@
       error: 'error',
     };
     statusText.textContent = detail || labels[state] || state;
-    btnConn.textContent = connected ? 'Disconnect' : 'Connect';
-    btnConn.className = 'btn ' + (connected ? 'danger' : 'primary');
     btnConn.disabled = state === 'connecting';
+    btnConn.classList.toggle('is-connected', connected);
+    btnConn.classList.toggle('is-error', state === 'error');
+    if (connected) {
+      btnConn.title = 'Tap to disconnect. Hold / right-click to scan all.';
+    } else if (state === 'connecting') {
+      devName.textContent = '';
+      btnConn.title = 'Connecting…';
+    } else {
+      devName.textContent = 'tap to connect';
+      btnConn.title = 'Tap to connect. Hold / right-click to scan all.';
+    }
   }
 
   function enqueue(bytes, coalesceType) {
@@ -875,7 +925,7 @@
     connected = true;
     setStatus('connected');
     devName.textContent = dev.name || 'EmergenceKey';
-    btnRe.hidden = true;
+    canReconnect = false;
   }
 
   async function connect(scanAll) {
@@ -904,7 +954,7 @@
       if (err && err.name === 'NotFoundError') {
         setStatus('disconnected');
       } else if (err && err.name === 'AbortError') {
-        setStatus('disconnected', 'beacio setup opened — come back and tap Connect');
+        setStatus('disconnected', 'beacio setup opened — come back and tap status');
       } else {
         setStatus('error', (err && err.message) || 'connect failed');
       }
@@ -913,17 +963,27 @@
 
   async function reconnect() {
     const api = ble();
-    if (!api || !api.getDevices) return;
+    if (!api || !api.getDevices) return false;
     try {
       setStatus('connecting');
       const id = localStorage.getItem(STORE);
       const list = await api.getDevices();
       const dev = list.find((d) => d.id === id) || list[0];
-      if (!dev) throw new Error('no saved device');
+      if (!dev) return false;
       await gattConnect(dev);
-    } catch (err) {
-      setStatus('error', (err && err.message) || 'reconnect failed');
+      return true;
+    } catch (_) {
+      return false;
     }
+  }
+
+  async function linkUp() {
+    if (connected && device) {
+      await connect(false);
+      return;
+    }
+    if (canReconnect && await reconnect()) return;
+    await connect(false);
   }
 
   let reGen = 0;
@@ -941,7 +1001,11 @@
       } catch (_) {}
     }
     if (gen !== reGen) return;
-    btnRe.hidden = !show;
+    canReconnect = show;
+    if (!connected) {
+      devName.textContent = 'tap to connect';
+      btnConn.title = 'Tap to connect. Hold / right-click to scan all.';
+    }
   }
 
   function fitTextBox() {
@@ -1144,12 +1208,34 @@
     }
   });
   fitTextBox();
-  btnConn.addEventListener('click', () => connect(false));
+  let statusHold = 0;
+  let statusHeld = false;
+  const cancelStatusHold = () => {
+    if (statusHold) { clearTimeout(statusHold); statusHold = 0; }
+  };
+  btnConn.addEventListener('pointerdown', (e) => {
+    if (e.button != null && e.button !== 0) return;
+    statusHeld = false;
+    cancelStatusHold();
+    statusHold = setTimeout(() => {
+      statusHold = 0;
+      statusHeld = true;
+      connect(true);
+    }, 550);
+  });
+  btnConn.addEventListener('pointerup', cancelStatusHold);
+  btnConn.addEventListener('pointercancel', cancelStatusHold);
+  btnConn.addEventListener('pointerleave', cancelStatusHold);
+  btnConn.addEventListener('click', () => {
+    if (statusHeld) { statusHeld = false; return; }
+    linkUp();
+  });
   btnConn.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+    cancelStatusHold();
+    statusHeld = true;
     connect(true);
   });
-  btnRe.addEventListener('click', reconnect);
   btnKb.addEventListener('click', () => {
     const hidden = kb.classList.toggle('keys-hidden');
     btnKb.classList.toggle('on', !hidden);
@@ -1164,6 +1250,12 @@
     const hidden = kb.classList.toggle('media-hidden');
     btnMedia.classList.toggle('on', !hidden);
     btnMedia.textContent = hidden ? 'Show media' : 'Hide media';
+  });
+  btnPad.addEventListener('click', () => {
+    const hidden = padWrap.classList.toggle('hidden');
+    btnPad.classList.toggle('on', !hidden);
+    btnPad.textContent = hidden ? 'Show trackpad' : 'Hide trackpad';
+    if (hidden && capturing) exitCapture();
   });
   // Desktop: show keys by default. Mobile keeps them hidden.
   if (!ios && matchMedia('(pointer: fine)').matches) {
@@ -1472,7 +1564,7 @@
       unsupported.textContent = 'Web Bluetooth needs HTTPS (use serve.py locally, or a hosted HTTPS URL).';
     } else if (ios) {
       unsupported.innerHTML =
-        'Safari has no native Web Bluetooth. Tap <b>aA</b> (left of the URL) → Manage Extensions → enable <b>beacio</b> → Allow, then tap Connect.';
+        'Safari has no native Web Bluetooth. Tap <b>aA</b> (left of the URL) → Manage Extensions → enable <b>beacio</b> → Allow, then tap the status.';
     } else {
       unsupported.textContent = 'This browser has no Web Bluetooth. Use Chrome/Edge (desktop or Android).';
     }
@@ -1485,13 +1577,16 @@
       return;
     }
     showBleHelp();
-    if (!connected) btnRe.hidden = true;
+    if (!connected) {
+      canReconnect = false;
+      devName.textContent = 'tap to connect';
+    }
   }
   if (!ios) refreshBleBanner();
   window.addEventListener('beacio:statechange', refreshBleBanner);
   setTimeout(refreshBleBanner, 300);
   setTimeout(refreshBleBanner, 1400);
-  btnConn.title = 'Click to connect. Right-click to scan all BLE devices.';
+  btnConn.title = 'Tap to connect. Hold / right-click to scan all.';
   // iOS: banner skipped above; still probe reconnect once BLE polyfill may be ready.
   if (ios) refreshReconnect();
 })();
