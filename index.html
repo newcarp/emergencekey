@@ -116,11 +116,11 @@
       }
       #btnConn {
         order: 1;
-        flex: 1 1 100%;
+        flex: 1 1 calc(50% - 3px);
       }
       #btnRe {
         order: 2;
-        flex: 1 1 100%;
+        flex: 1 1 calc(50% - 3px);
       }
       .modgrid {
         flex: 3.4;
@@ -206,24 +206,52 @@
       grid-template-rows: 0fr;
       margin-bottom: -6px;
     }
-    .media-wrap > .media-row {
+    .media-wrap > .media-pad {
       min-height: 0;
       overflow: hidden;
     }
-    .media-row {
-      gap: 4px;
+    .media-pad {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
       transform: translateY(0);
       opacity: 1;
       transition:
         transform .38s cubic-bezier(.4, 0, .2, 1),
         opacity .28s ease;
     }
-    .kb.media-hidden .media-row {
+    .kb.media-hidden .media-pad {
       transform: translateY(12px);
       opacity: 0;
       pointer-events: none;
     }
+    .media-row { gap: 4px; }
     .media-row .key { font-size: 12px; min-height: 36px; }
+    .fkeys-wrap {
+      display: grid;
+      grid-template-rows: 1fr;
+      transition: grid-template-rows .38s cubic-bezier(.4, 0, .2, 1);
+    }
+    .kb.fkeys-hidden .fkeys-wrap {
+      grid-template-rows: 0fr;
+      margin-bottom: -6px;
+    }
+    .fkeys-wrap > .toprow {
+      min-height: 0;
+      overflow: hidden;
+    }
+    .kb.fkeys-hidden .toprow {
+      transform: translateY(12px);
+      opacity: 0;
+      pointer-events: none;
+    }
+    .toprow {
+      transform: translateY(0);
+      opacity: 1;
+      transition:
+        transform .38s cubic-bezier(.4, 0, .2, 1),
+        opacity .28s ease;
+    }
     .key {
       flex: 1;
       min-width: 0;
@@ -360,6 +388,9 @@
       line-height: 1.4;
     }
     .pad-hint b { color: var(--text); font-size: 12px; letter-spacing: .12em; }
+    .pad-hint .hint-desk { display: none; }
+    html.desk-ui .pad-hint .hint-touch { display: none; }
+    html.desk-ui .pad-hint .hint-desk { display: block; }
     .finger {
       position: absolute;
       width: 44px; height: 44px;
@@ -460,6 +491,7 @@
     </div>
     <div class="bar-btns">
       <button class="btn" id="btnKb" title="Show / hide keyboard">Show keys</button>
+      <button class="btn" id="btnFkeys" title="Show / hide Esc and F1–F12">Show F keys</button>
       <button class="btn" id="btnMedia" title="Show / hide media controls">Show media</button>
       <button class="btn" id="btnSens" title="Show / hide mouse speed">Mouse speed</button>
       <button class="btn capture" id="btnCapture" hidden>Capture</button>
@@ -481,24 +513,30 @@
   <div id="pad">
     <div class="pad-hint">
       <b>TRACKPAD</b>
-      <span>1 finger: move / tap-click<br>2 fingers: scroll / tap-right-click<br>Double-tap-hold: drag &nbsp;·&nbsp; Desktop: wheel + right-click</span>
+      <span class="hint-touch">1 finger: move / tap-click<br>2 fingers: scroll / tap-right-click<br>Double-tap-hold: drag</span>
+      <span class="hint-desk">Move / Click / Scroll<br>Double click and hold to drag</span>
     </div>
   </div>
 
-  <div class="kb keys-hidden media-hidden" id="kb">
+  <div class="kb keys-hidden media-hidden fkeys-hidden" id="kb">
     <div class="media-wrap">
-      <div class="row media-row">
-        <button class="key" data-media="0x03" title="Previous">Prev</button>
-        <button class="key" data-media="0x01" title="Play / Pause">Play</button>
-        <button class="key" data-media="0x02" title="Next">Next</button>
-        <button class="key" data-media="0x04" title="Stop">Stop</button>
-        <button class="key" data-media="0x07" title="Mute">Mute</button>
-        <button class="key" data-media="0x06" data-repeat title="Volume down">Vol−</button>
-        <button class="key" data-media="0x05" data-repeat title="Volume up">Vol+</button>
+      <div class="media-pad">
+        <div class="row media-row">
+          <button class="key" data-media="0x09" data-repeat title="Rewind">Rew</button>
+          <button class="key" data-media="0x03" title="Previous">Prev</button>
+          <button class="key" data-media="0x01" title="Play / Pause">Play/Pause</button>
+          <button class="key" data-media="0x02" title="Next">Next</button>
+          <button class="key" data-media="0x08" data-repeat title="Fast forward">FF</button>
+        </div>
+        <div class="row media-row">
+          <button class="key" data-media="0x04" title="Stop">Stop</button>
+          <button class="key" data-media="0x07" title="Mute">Mute</button>
+          <button class="key" data-media="0x06" data-repeat title="Volume down">Vol−</button>
+          <button class="key" data-media="0x05" data-repeat title="Volume up">Vol+</button>
+        </div>
       </div>
     </div>
-    <div class="qwerty-wrap">
-    <div class="qwerty">
+    <div class="fkeys-wrap">
       <div class="row toprow">
         <button class="key" data-key="0x29">Esc</button>
         <button class="key" data-key="0x3A">F1</button>
@@ -514,6 +552,9 @@
         <button class="key" data-key="0x44">F11</button>
         <button class="key" data-key="0x45">F12</button>
       </div>
+    </div>
+    <div class="qwerty-wrap">
+    <div class="qwerty">
       <div class="row">
         <button class="key ck" data-key="0x35">`</button>
         <button class="key ck" data-key="0x1E">1</button>
@@ -614,11 +655,15 @@
   const $ = (id) => document.getElementById(id);
   const dot = $('dot'), statusText = $('statusText'), devName = $('devName');
   const btnConn = $('btnConn'), btnRe = $('btnRe'), btnSend = $('btnSend');
-  const btnCapture = $('btnCapture'), btnKb = $('btnKb'), btnMedia = $('btnMedia');
+  const btnCapture = $('btnCapture'), btnKb = $('btnKb'), btnFkeys = $('btnFkeys'), btnMedia = $('btnMedia');
   const btnSens = $('btnSens'), warnText = $('warnText');
   const textEl = $('text'), pad = $('pad'), unsupported = $('unsupported'), kb = $('kb');
   const sensEl = $('sens'), sensVal = $('sensVal'), sensRow = $('sensRow');
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  document.documentElement.classList.toggle(
+    'desk-ui',
+    !ios && matchMedia('(pointer: fine)').matches
+  );
   const ble = () => navigator.bluetooth || navigator.beacio || null;
   const realBle = () => {
     const b = ble();
@@ -1101,6 +1146,11 @@
     btnKb.classList.toggle('on', !hidden);
     btnKb.textContent = hidden ? 'Show keys' : 'Hide keys';
   });
+  btnFkeys.addEventListener('click', () => {
+    const hidden = kb.classList.toggle('fkeys-hidden');
+    btnFkeys.classList.toggle('on', !hidden);
+    btnFkeys.textContent = hidden ? 'Show F keys' : 'Hide F keys';
+  });
   btnMedia.addEventListener('click', () => {
     const hidden = kb.classList.toggle('media-hidden');
     btnMedia.classList.toggle('on', !hidden);
@@ -1260,6 +1310,8 @@
     AudioVolumeUp: 0x05,
     AudioVolumeDown: 0x06,
     AudioVolumeMute: 0x07,
+    MediaFastForward: 0x08,
+    MediaRewind: 0x09,
   };
   const MOD_BIT = {
     ControlLeft: 1, ControlRight: 1, ShiftLeft: 2, ShiftRight: 2,
