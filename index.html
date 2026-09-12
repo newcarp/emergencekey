@@ -131,6 +131,10 @@
         min-height: 42px;
       }
       .key.space { flex: 4.5; }
+      .media-row .key {
+        font-size: 11px;
+        min-height: 42px;
+      }
       .arrows {
         flex: 0 0 104px;
         width: 104px;
@@ -193,6 +197,33 @@
       opacity: 0;
       pointer-events: none;
     }
+    .media-wrap {
+      display: grid;
+      grid-template-rows: 1fr;
+      transition: grid-template-rows .38s cubic-bezier(.4, 0, .2, 1);
+    }
+    .kb.media-hidden .media-wrap {
+      grid-template-rows: 0fr;
+      margin-bottom: -6px;
+    }
+    .media-wrap > .media-row {
+      min-height: 0;
+      overflow: hidden;
+    }
+    .media-row {
+      gap: 4px;
+      transform: translateY(0);
+      opacity: 1;
+      transition:
+        transform .38s cubic-bezier(.4, 0, .2, 1),
+        opacity .28s ease;
+    }
+    .kb.media-hidden .media-row {
+      transform: translateY(12px);
+      opacity: 0;
+      pointer-events: none;
+    }
+    .media-row .key { font-size: 12px; min-height: 36px; }
     .key {
       flex: 1;
       min-width: 0;
@@ -410,6 +441,7 @@
       .key { min-height: 40px; font-size: 14px; }
       .toprow .key { min-height: 32px; font-size: 12px; }
       .arrows .key { font-size: 20px; }
+      .media-row .key { min-height: 44px; font-size: 13px; }
       textarea { min-height: 56px; height: auto; }
       .btn { min-height: 44px; }
     }
@@ -428,6 +460,7 @@
     </div>
     <div class="bar-btns">
       <button class="btn" id="btnKb" title="Show / hide keyboard">Show keys</button>
+      <button class="btn" id="btnMedia" title="Show / hide media controls">Show media</button>
       <button class="btn" id="btnSens" title="Show / hide mouse speed">Mouse speed</button>
       <button class="btn capture" id="btnCapture" hidden>Capture</button>
       <button class="btn" id="btnRe" hidden>Reconnect</button>
@@ -452,7 +485,18 @@
     </div>
   </div>
 
-  <div class="kb keys-hidden" id="kb">
+  <div class="kb keys-hidden media-hidden" id="kb">
+    <div class="media-wrap">
+      <div class="row media-row">
+        <button class="key" data-media="0x03" title="Previous">Prev</button>
+        <button class="key" data-media="0x01" title="Play / Pause">Play</button>
+        <button class="key" data-media="0x02" title="Next">Next</button>
+        <button class="key" data-media="0x04" title="Stop">Stop</button>
+        <button class="key" data-media="0x07" title="Mute">Mute</button>
+        <button class="key" data-media="0x06" data-repeat title="Volume down">Vol−</button>
+        <button class="key" data-media="0x05" data-repeat title="Volume up">Vol+</button>
+      </div>
+    </div>
     <div class="qwerty-wrap">
     <div class="qwerty">
       <div class="row toprow">
@@ -570,7 +614,8 @@
   const $ = (id) => document.getElementById(id);
   const dot = $('dot'), statusText = $('statusText'), devName = $('devName');
   const btnConn = $('btnConn'), btnRe = $('btnRe'), btnSend = $('btnSend');
-  const btnCapture = $('btnCapture'), btnKb = $('btnKb'), btnSens = $('btnSens'), warnText = $('warnText');
+  const btnCapture = $('btnCapture'), btnKb = $('btnKb'), btnMedia = $('btnMedia');
+  const btnSens = $('btnSens'), warnText = $('warnText');
   const textEl = $('text'), pad = $('pad'), unsupported = $('unsupported'), kb = $('kb');
   const sensEl = $('sens'), sensVal = $('sensVal'), sensRow = $('sensRow');
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -720,6 +765,7 @@
     send(0x01, (stickyMod | (extraMod || 0)) & 0xff, hid);
   }
   function sendClick(btn) { send(0x03, btn, 0x00); }
+  function sendMedia(action) { send(0x05, action, 0x00); }
 
   let mouseSens = 1;
   let moveAccX = 0, moveAccY = 0;
@@ -918,6 +964,11 @@
   function highlightMod(bit, on) {
     document.querySelectorAll(`[data-mod="${bit}"]`).forEach((btn) => setKeyPressed(btn, on));
   }
+  function highlightMedia(action, on) {
+    document.querySelectorAll('[data-media]').forEach((btn) => {
+      if (Number(btn.dataset.media) === action) setKeyPressed(btn, on);
+    });
+  }
     // iOS Safari: :active only applies after a touch listener exists.
     document.addEventListener('touchstart', () => {}, { passive: true });
     // Pinch-zoom still happens on iOS even with user-scalable=no.
@@ -1003,6 +1054,33 @@
       }
     });
   });
+
+  const MEDIA_REPEAT_MS = 140;
+  document.querySelectorAll('[data-media]').forEach((btn) => {
+    const action = Number(btn.dataset.media);
+    let timer = 0;
+    const tap = () => sendMedia(action);
+    const stopRepeat = () => {
+      if (timer) { clearInterval(timer); timer = 0; }
+    };
+    btn.addEventListener('click', () => {
+      if (btn.hasAttribute('data-repeat')) return;
+      tap();
+    });
+    if (!btn.hasAttribute('data-repeat')) return;
+    const startRepeat = (e) => {
+      if (e.button != null && e.button !== 0) return;
+      tap();
+      stopRepeat();
+      timer = setInterval(tap, MEDIA_REPEAT_MS);
+    };
+    btn.addEventListener('pointerdown', startRepeat);
+    btn.addEventListener('pointerup', stopRepeat);
+    btn.addEventListener('pointercancel', stopRepeat);
+    btn.addEventListener('pointerleave', stopRepeat);
+    btn.addEventListener('touchend', stopRepeat, { passive: true });
+    btn.addEventListener('touchcancel', stopRepeat, { passive: true });
+  });
   btnSend.addEventListener('click', () => sendText(false));
   textEl.addEventListener('input', fitTextBox);
   textEl.addEventListener('keydown', (e) => {
@@ -1022,6 +1100,11 @@
     const hidden = kb.classList.toggle('keys-hidden');
     btnKb.classList.toggle('on', !hidden);
     btnKb.textContent = hidden ? 'Show keys' : 'Hide keys';
+  });
+  btnMedia.addEventListener('click', () => {
+    const hidden = kb.classList.toggle('media-hidden');
+    btnMedia.classList.toggle('on', !hidden);
+    btnMedia.textContent = hidden ? 'Show media' : 'Hide media';
   });
   // Desktop: show keys by default. Mobile keeps them hidden.
   if (!ios && matchMedia('(pointer: fine)').matches) {
@@ -1169,6 +1252,15 @@
     Insert: 0x49, Home: 0x4A, PageUp: 0x4B, Delete: 0x4C, End: 0x4D, PageDown: 0x4E,
     ArrowRight: 0x4F, ArrowLeft: 0x50, ArrowDown: 0x51, ArrowUp: 0x52,
   };
+  const CODE_MEDIA = {
+    MediaPlayPause: 0x01,
+    MediaTrackNext: 0x02,
+    MediaTrackPrevious: 0x03,
+    MediaStop: 0x04,
+    AudioVolumeUp: 0x05,
+    AudioVolumeDown: 0x06,
+    AudioVolumeMute: 0x07,
+  };
   const MOD_BIT = {
     ControlLeft: 1, ControlRight: 1, ShiftLeft: 2, ShiftRight: 2,
     AltLeft: 4, AltRight: 4, MetaLeft: 8, MetaRight: 8,
@@ -1184,6 +1276,8 @@
     }
     const hid = CODE_HID[e.code];
     if (hid) highlightHid(hid, down);
+    const media = CODE_MEDIA[e.code];
+    if (media) highlightMedia(media, down);
   }
   window.addEventListener('keydown', (e) => paintPhysicalKey(e, true));
   window.addEventListener('keyup', (e) => paintPhysicalKey(e, false));
@@ -1208,6 +1302,12 @@
     if (hid) {
       sendKey(hid, liveMod);
       highlightHid(hid, true);
+      return;
+    }
+    const media = CODE_MEDIA[e.code];
+    if (media) {
+      sendMedia(media);
+      highlightMedia(media, true);
     }
   }
   function onCapturedKeyUp(e) {
@@ -1221,7 +1321,12 @@
       return;
     }
     const hid = CODE_HID[e.code];
-    if (hid) highlightHid(hid, false);
+    if (hid) {
+      highlightHid(hid, false);
+      return;
+    }
+    const media = CODE_MEDIA[e.code];
+    if (media) highlightMedia(media, false);
   }
   function onCapturedMouseMove(e) {
     if (!capturing) return;
