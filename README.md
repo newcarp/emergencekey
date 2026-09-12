@@ -2,7 +2,7 @@
 
 I don't want to carry a keyboard.
 
-EmergenceKey is a web interface that gives on-screen keyboard, text sending, and mouse control so your phone or laptop can 
+EmergenceKey is a web interface that gives on-screen keyboard, text sending, mouse control, and media keys so your phone or laptop can
 drive the target without packing a real keyboard or mouse.
 
 This repo is the **phone / laptop web UI**. It is half of the project. The USB dongle firmware lives in [newcarp/emergencekey-firmware](https://github.com/newcarp/emergencekey-firmware).
@@ -38,6 +38,8 @@ If nothing happens after hitting Connect (or the light stays yellow), the OS has
 - If no prompt appears → pair EmergenceKey manually in your OS Bluetooth settings, then come back and hit **Connect** again.
 
 You should only have to go through the pairing step once. After that it should just work when you connect on the webpage.
+
+**Show media** and **Show F keys** fold those rows in. Media is play/pause, next/prev, stop, rewind, FF, mute, and volume (hold Vol± / Rew / FF to repeat). Media keys need a dongle flashed from current [firmware](https://github.com/newcarp/emergencekey-firmware). Older sticks ignore them; the rest of the page still works.
 
 ## Self Hosting Quick start
 
