@@ -131,9 +131,12 @@
         min-height: 42px;
       }
       .key.space { flex: 4.5; }
-      .media-row .key {
-        font-size: 11px;
-        min-height: 42px;
+      .media-pad {
+        min-height: 220px;
+        gap: 6px;
+      }
+      .media-pad .key {
+        font-size: 15px;
       }
       .arrows {
         flex: 0 0 104px;
@@ -206,27 +209,34 @@
       grid-template-rows: 0fr;
       margin-bottom: -6px;
     }
-    .media-wrap > .media-pad {
+    .media-wrap > .media-clip {
       min-height: 0;
       overflow: hidden;
     }
-    .media-pad {
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
+    .media-clip {
       transform: translateY(0);
       opacity: 1;
       transition:
         transform .38s cubic-bezier(.4, 0, .2, 1),
         opacity .28s ease;
     }
-    .kb.media-hidden .media-pad {
+    .kb.media-hidden .media-clip {
       transform: translateY(12px);
       opacity: 0;
       pointer-events: none;
     }
-    .media-row { gap: 4px; }
-    .media-row .key { font-size: 12px; min-height: 36px; }
+    .media-pad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      gap: 6px;
+      min-height: 207px;
+    }
+    .media-pad .key {
+      flex: none;
+      min-height: 0;
+      font-size: 16px;
+    }
     .fkeys-wrap {
       display: grid;
       grid-template-rows: 1fr;
@@ -472,7 +482,8 @@
       .key { min-height: 40px; font-size: 14px; }
       .toprow .key { min-height: 32px; font-size: 12px; }
       .arrows .key { font-size: 20px; }
-      .media-row .key { min-height: 44px; font-size: 13px; }
+      .media-pad { min-height: 255px; }
+      .media-pad .key { font-size: 18px; }
       textarea { min-height: 56px; height: auto; }
       .btn { min-height: 44px; }
     }
@@ -520,18 +531,16 @@
 
   <div class="kb keys-hidden media-hidden fkeys-hidden" id="kb">
     <div class="media-wrap">
-      <div class="media-pad">
-        <div class="row media-row">
-          <button class="key" data-media="0x09" data-repeat title="Rewind">Rew</button>
+      <div class="media-clip">
+        <div class="media-pad">
           <button class="key" data-media="0x03" title="Previous">Prev</button>
           <button class="key" data-media="0x01" title="Play / Pause">Play/Pause</button>
           <button class="key" data-media="0x02" title="Next">Next</button>
-          <button class="key" data-media="0x08" data-repeat title="Fast forward">FF</button>
-        </div>
-        <div class="row media-row">
+          <button class="key" data-media="0x09" data-repeat title="Rewind">Rew</button>
           <button class="key" data-media="0x04" title="Stop">Stop</button>
-          <button class="key" data-media="0x07" title="Mute">Mute</button>
+          <button class="key" data-media="0x08" data-repeat title="Fast forward">FF</button>
           <button class="key" data-media="0x06" data-repeat title="Volume down">Vol−</button>
+          <button class="key" data-media="0x07" title="Mute">Mute</button>
           <button class="key" data-media="0x05" data-repeat title="Volume up">Vol+</button>
         </div>
       </div>
