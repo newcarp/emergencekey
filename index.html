@@ -389,6 +389,8 @@
         radial-gradient(ellipse at 50% 30%, #1a2433 0%, #0d1117 70%);
       touch-action: none;
       user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
       overflow: hidden;
     }
     #pad.down { border-color: var(--blue); }
@@ -1274,12 +1276,16 @@
   const pts = new Map();
   let maxPts = 0, travel = 0, started = 0, last = null, lastAvgY = 0;
   let didScroll = false, ignoreTap = false, holdDrag = false, lastTap = 0;
+  let didMove = false;
   let fingers = [];
 
   function avgY() {
     let s = 0;
     for (const p of pts.values()) s += p.y;
     return s / pts.size;
+  }
+  function isDrag() {
+    return travel > TAP_PX || (Date.now() - started > TAP_MS && travel > 2);
   }
   function paintFingers() {
     fingers.forEach((n) => n.remove());
@@ -1297,7 +1303,7 @@
   }
   function endGesture() {
     const dt = Date.now() - started;
-    const tap = travel < TAP_PX && dt < TAP_MS && !didScroll && !ignoreTap;
+    const tap = travel < TAP_PX && dt < TAP_MS && !didScroll && !ignoreTap && !didMove;
     if (maxPts <= 1 && tap && !holdDrag) {
       sendClick(0x01);
       lastTap = Date.now();
@@ -1312,63 +1318,65 @@
     last = null;
     didScroll = false;
     ignoreTap = false;
+    didMove = false;
     paintFingers();
   }
-
-  pad.addEventListener('pointerdown', (e) => {
+  function padDown(id, x, y, button, pointerType) {
     if (capturing) return;
-    e.preventDefault();
-    pad.setPointerCapture(e.pointerId);
     if (pts.size === 0) {
       started = Date.now();
       travel = 0;
       didScroll = false;
       ignoreTap = false;
-      if (Date.now() - lastTap < DBL_MS && e.button === 0) {
+      didMove = false;
+      if (Date.now() - lastTap < DBL_MS && button === 0) {
         holdDrag = true;
         pad.classList.add('dragging');
         sendClick(0x01);
       }
     }
-    if (e.pointerType === 'mouse' && e.button === 2) {
+    if (pointerType === 'mouse' && button === 2) {
       sendClick(0x02);
       ignoreTap = true;
     }
-    if (e.pointerType === 'mouse' && e.button === 1) {
+    if (pointerType === 'mouse' && button === 1) {
       sendClick(0x04);
       ignoreTap = true;
     }
-    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    pts.set(id, { x, y });
     maxPts = Math.max(maxPts, pts.size);
-    if (pts.size === 1) last = { x: e.clientX, y: e.clientY };
+    if (pts.size === 1) last = { x, y };
     if (pts.size >= 2) lastAvgY = avgY();
     paintFingers();
-  });
-
-  pad.addEventListener('pointermove', (e) => {
+  }
+  function padMove(id, x, y) {
     if (capturing) return;
-    const p = pts.get(e.pointerId);
+    const p = pts.get(id);
     if (!p) return;
-    const dx = e.clientX - p.x, dy = e.clientY - p.y;
-    p.x = e.clientX; p.y = e.clientY;
+    const dx = x - p.x, dy = y - p.y;
+    p.x = x; p.y = y;
     travel += Math.hypot(dx, dy);
     if (pts.size === 1 && last) {
-      const mx = e.clientX - last.x, my = e.clientY - last.y;
-      last = { x: e.clientX, y: e.clientY };
-      if (travel > TAP_PX && (Math.abs(mx) >= 1 || Math.abs(my) >= 1)) sendMove(mx, my);
+      const mx = x - last.x, my = y - last.y;
+      // Keep last pinned until this is a drag so slow sub-pixel moves accumulate
+      // in sendMove instead of being thrown away each event.
+      if (isDrag() && (mx || my)) {
+        sendMove(mx, my);
+        last = { x, y };
+        didMove = true;
+      }
     } else if (pts.size >= 2) {
-      const y = avgY();
-      const sdy = (y - lastAvgY) / SCROLL_DIV;
-      lastAvgY = y;
+      const ay = avgY();
+      const sdy = (ay - lastAvgY) / SCROLL_DIV;
+      lastAvgY = ay;
       if (Math.abs(sdy) >= 1) { didScroll = true; sendScroll(0, sdy); }
     }
     paintFingers();
-  });
-
-  function up(e) {
+  }
+  function padUp(id) {
     if (capturing) return;
-    if (!pts.has(e.pointerId)) return;
-    pts.delete(e.pointerId);
+    if (!pts.has(id)) return;
+    pts.delete(id);
     if (pts.size === 0) endGesture();
     else {
       last = [...pts.values()][0];
@@ -1377,8 +1385,38 @@
       paintFingers();
     }
   }
-  pad.addEventListener('pointerup', up);
-  pad.addEventListener('pointercancel', up);
+
+  // iOS Safari: pointer capture / long-press cancels slow finger tracking.
+  // Touch events + preventDefault keep moves flowing.
+  if (ios) {
+    pad.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      for (const t of e.changedTouches) padDown(t.identifier, t.clientX, t.clientY, 0, 'touch');
+    }, { passive: false });
+    pad.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      for (const t of e.changedTouches) padMove(t.identifier, t.clientX, t.clientY);
+    }, { passive: false });
+    const touchUp = (e) => {
+      e.preventDefault();
+      for (const t of e.changedTouches) padUp(t.identifier);
+    };
+    pad.addEventListener('touchend', touchUp, { passive: false });
+    pad.addEventListener('touchcancel', touchUp, { passive: false });
+  } else {
+    pad.addEventListener('pointerdown', (e) => {
+      if (capturing) return;
+      e.preventDefault();
+      pad.setPointerCapture(e.pointerId);
+      padDown(e.pointerId, e.clientX, e.clientY, e.button, e.pointerType);
+    });
+    pad.addEventListener('pointermove', (e) => {
+      padMove(e.pointerId, e.clientX, e.clientY);
+    });
+    function up(e) { padUp(e.pointerId); }
+    pad.addEventListener('pointerup', up);
+    pad.addEventListener('pointercancel', up);
+  }
   pad.addEventListener('contextmenu', (e) => e.preventDefault());
   pad.addEventListener('wheel', (e) => {
     e.preventDefault();
