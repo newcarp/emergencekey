@@ -52,6 +52,24 @@
       padding: 6px 8px;
       flex-shrink: 0;
     }
+    .bar-lead {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+    .btn.icon {
+      width: 40px;
+      min-width: 40px;
+      padding: 0;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+      color: var(--muted);
+    }
+    .btn.icon.on { color: var(--accent); }
+    .btn.icon svg { display: block; }
     .status {
       display: flex;
       align-items: center;
@@ -68,6 +86,7 @@
       appearance: none;
     }
     .status.is-connected { border-color: var(--accent-dim); }
+    .status.is-locked { border-color: #2a4a6a; }
     .status.is-error { border-color: #5a2233; }
     .dot {
       width: 10px; height: 10px; border-radius: 50%;
@@ -76,6 +95,7 @@
     }
     .dot.connecting { background: var(--warn); animation: pulse 1s ease-in-out infinite; }
     .dot.connected { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+    .dot.locked { background: var(--blue); box-shadow: 0 0 8px var(--blue); }
     .dot.error { background: var(--danger); }
     @keyframes pulse { 50% { opacity: .35; } }
     #statusText {
@@ -107,8 +127,10 @@
         gap: 6px;
         align-items: stretch;
       }
-      .status {
+      .bar-lead {
         flex: 1 1 100%;
+      }
+      .status {
         min-height: 40px;
       }
       .bar-btns {
@@ -449,50 +471,14 @@
       border: 2px solid var(--blue);
       pointer-events: none;
     }
-    .sens-wrap {
-      display: grid;
-      grid-template-rows: 1fr;
-      transition:
-        grid-template-rows .38s cubic-bezier(.4, 0, .2, 1),
-        margin-bottom .38s cubic-bezier(.4, 0, .2, 1);
-      flex-shrink: 0;
-      margin-bottom: 0;
-    }
-    .sens-wrap.hidden {
-      grid-template-rows: 0fr;
-      margin-bottom: -6px;
-    }
-    .sens-wrap > .sens {
-      min-height: 0;
-      overflow: hidden;
-    }
     .sens {
       display: flex;
       align-items: center;
       gap: 10px;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 4px 10px;
       font-size: 12px;
       color: var(--muted);
       font-weight: 600;
-      opacity: 1;
-      transform: translateY(0);
-      transition:
-        transform .38s cubic-bezier(.4, 0, .2, 1),
-        opacity .28s ease,
-        border-color .28s ease,
-        background-color .28s ease;
     }
-    .sens-wrap.hidden > .sens {
-      opacity: 0;
-      transform: translateY(-10px);
-      pointer-events: none;
-      border-color: transparent;
-      background: transparent;
-    }
-    .sens label { flex-shrink: 0; letter-spacing: .04em; }
     .sens input[type="range"] {
       flex: 1;
       min-width: 0;
@@ -517,6 +503,100 @@
       font-size: 13px;
     }
     #unsupported.show { display: block; }
+
+    .pin-overlay, .settings-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+      background: rgba(6, 8, 12, .62);
+    }
+    .pin-overlay { z-index: 50; }
+    .pin-overlay.show, .settings-overlay.show { display: flex; }
+    .pin-card, .settings-card {
+      width: min(420px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 14px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .pin-card {
+      width: min(460px, 100%);
+      padding: 20px 18px 16px;
+      gap: 14px;
+    }
+    .set-block {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .set-block + .set-block {
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+    }
+    .set-block h3 {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .set-hint { margin: 0; font-size: 13px; line-height: 1.4; color: var(--muted); }
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    .pin-title { font-size: 16px; font-weight: 700; }
+    .pin-card .pin-title { font-size: 22px; }
+    .pin-msg { margin: 0; font-size: 13px; line-height: 1.4; color: var(--muted); }
+    .pin-card .pin-msg {
+      font-size: 17px;
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .pin-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+    .pin-card .pin-field { font-size: 15px; gap: 6px; }
+    .pin-field[hidden] { display: none !important; }
+    .pin-field input {
+      min-height: 44px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-2);
+      color: var(--text);
+      -webkit-text-fill-color: var(--text);
+      caret-color: var(--text);
+      letter-spacing: .18em;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .pin-card .pin-field input {
+      min-height: 52px;
+      font-size: 22px;
+    }
+    .pin-field input:focus { outline: 2px solid var(--blue); outline-offset: 1px; }
+    .pin-err { margin: 0; min-height: 1.2em; font-size: 12px; font-weight: 600; color: var(--danger); }
+    .pin-card .pin-err { font-size: 15px; }
+    .pin-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pin-actions .btn { flex: 1; min-width: 96px; }
+    .pin-card .pin-actions .btn { min-height: 48px; font-size: 16px; }
+    @media (min-width: 560px) {
+      .pin-overlay, .settings-overlay { align-items: center; }
+    }
     @media (min-height: 820px) {
       .key { min-height: 40px; font-size: 14px; }
       .toprow .key { min-height: 32px; font-size: 12px; }
@@ -532,32 +612,30 @@
   <div id="unsupported"></div>
 
   <div class="bar">
-    <button type="button" class="status" id="btnConn" title="Tap to connect. Hold / right-click to scan all.">
-      <span class="dot" id="dot"></span>
-      <div style="min-width:0">
-        <div id="statusText">disconnected</div>
-        <div id="devName">tap to connect</div>
-      </div>
-    </button>
+    <div class="bar-lead">
+      <button type="button" class="btn icon" id="btnSettings" aria-label="Settings" aria-expanded="false" title="Settings">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.15 7.15 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.59.24-1.13.55-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.81 8.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.93 14.1a.5.5 0 0 0-.12.64l1.92 3.32c.13.23.4.32.64.22l2.39-.96c.5.39 1.04.7 1.63.94l.36 2.54c.05.24.25.42.49.42h3.8c.24 0 .44-.18.49-.42l.36-2.54c.59-.24 1.13-.55 1.63-.94l2.39.96c.24.1.51 0 .64-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/>
+        </svg>
+      </button>
+      <button type="button" class="status" id="btnConn" title="Tap to connect. Hold / right-click to scan all.">
+        <span class="dot" id="dot"></span>
+        <div style="min-width:0">
+          <div id="statusText">disconnected</div>
+          <div id="devName">tap to connect</div>
+        </div>
+      </button>
+    </div>
     <div class="bar-btns">
       <button class="btn on" id="btnPad" title="Show / hide trackpad">Hide trackpad</button>
       <button class="btn" id="btnKb" title="Show / hide keyboard">Show keys</button>
-      <button class="btn" id="btnMedia" title="Show / hide media controls">Show media</button>
+      <button class="btn" id="btnMedia" title="Show / hide media keys">Show media keys</button>
       <button class="btn" id="btnFkeys" title="Show / hide Esc and F1–F12">Show F keys</button>
-      <button class="btn" id="btnSens" title="Show / hide mouse speed">Mouse speed</button>
       <button class="btn capture" id="btnCapture" hidden>Capture</button>
     </div>
   </div>
 
   <div class="warn" id="warnText"></div>
-
-  <div class="sens-wrap hidden" id="sensRow">
-    <div class="sens">
-      <label for="sens">Mouse speed</label>
-      <input type="range" id="sens" min="0.25" max="4" step="0.05" value="1">
-      <span id="sensVal">1.00×</span>
-    </div>
-  </div>
 
   <div class="pad-wrap" id="padWrap">
   <div id="pad">
@@ -689,17 +767,79 @@
     </div>
   </div>
 
+  <div class="pin-overlay" id="pinOverlay">
+    <div class="pin-card" role="dialog" aria-modal="true" aria-labelledby="pinTitle">
+      <div class="pin-title" id="pinTitle">PIN</div>
+      <p class="pin-msg" id="pinMsg"></p>
+      <label class="pin-field" id="pinFieldWrap">
+        <span id="pinLabel">PIN (4–8 digits)</span>
+        <input id="pinInput" type="password" inputmode="numeric" maxlength="8" autocomplete="one-time-code" enterkeyhint="done">
+      </label>
+      <label class="pin-field" id="pinField2Wrap" hidden>
+        <span>Confirm</span>
+        <input id="pinInput2" type="password" inputmode="numeric" maxlength="8" autocomplete="one-time-code" enterkeyhint="done">
+      </label>
+      <p class="pin-err" id="pinErr"></p>
+      <div class="pin-actions">
+        <button type="button" class="btn" id="pinCancel">Not now</button>
+        <button type="button" class="btn danger" id="pinAlt" hidden>Clear PIN</button>
+        <button type="button" class="btn primary" id="pinOk">Unlock</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-overlay" id="setOverlay">
+    <div class="settings-card" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+      <div class="pin-title" id="setTitle">Settings</div>
+      <section class="set-block">
+        <h3>Mouse speed</h3>
+        <div class="sens">
+          <label for="sens" class="visually-hidden">Mouse speed</label>
+          <input type="range" id="sens" min="0.25" max="4" step="0.05" value="1">
+          <span id="sensVal">1.00×</span>
+        </div>
+      </section>
+      <section class="set-block">
+        <h3>PIN</h3>
+        <p class="set-hint" id="setPinMsg">Connect to manage the stick PIN.</p>
+        <div class="pin-actions">
+          <button type="button" class="btn primary" id="setPinAction" hidden>Set PIN</button>
+          <button type="button" class="btn" id="setPinForget" hidden>Forget saved PIN</button>
+        </div>
+      </section>
+      <section class="set-block">
+        <h3>Bluetooth</h3>
+        <p class="set-hint">If Connect does nothing or the light stays yellow, pair EmergenceKey in your OS Bluetooth settings, then come back and tap the status.</p>
+        <div class="pin-actions">
+          <button type="button" class="btn" id="setScan">Scan all devices</button>
+        </div>
+      </section>
+      <div class="pin-actions">
+        <button type="button" class="btn" id="setClose">Close</button>
+      </div>
+    </div>
+  </div>
+
 <script src="https://beacio.com/beacio.js"></script>
 <script>
 (() => {
   const SERVICE = '2d2a0001-8a5a-4e76-a2e3-1e57d9a1b001';
   const WRITE   = '2d2a0002-8a5a-4e76-a2e3-1e57d9a1b001';
+  const STATUS  = '2d2a0003-8a5a-4e76-a2e3-1e57d9a1b001';
   const GAP_MS  = 12;
   // Default ATT MTU is 23 → 20-byte payload. Firmware accepts batched 3-byte v1 frames.
   const MAX_PACKET = 18;
   const WRITE_RETRIES = 3;
   const STORE   = 'emergencekey-device-id';
   const STORE_SENS = 'emergencekey-mouse-sens';
+  const STORE_PIN = 'emergencekey-pin:';
+  const STORE_PIN_SKIP = 'emergencekey-pin-skip:';
+  const PIN_UNLOCK = 0x30, PIN_SET = 0x31, PIN_CLEAR = 0x32;
+  const CMD_HANGUP = 0x33;
+  const HANGUP_WAIT_MS = 80;
+  const PIN_ST = { NONE: 0, LOCKED: 1, UNLOCKED: 2, COOLDOWN: 3 };
+  const PIN_OK = 1, PIN_BAD = 2, PIN_DENIED = 3, PIN_FLASH = 4;
+  const PIN_BUSY = 5, PIN_WRONG = 6, PIN_COOL = 7, PIN_NOSLOT = 8;
 
   const $ = (id) => document.getElementById(id);
   const dot = $('dot'), statusText = $('statusText'), devName = $('devName');
@@ -707,10 +847,17 @@
   let canReconnect = false;
   const btnCapture = $('btnCapture'), btnKb = $('btnKb'), btnFkeys = $('btnFkeys');
   const btnMedia = $('btnMedia'), btnPad = $('btnPad');
-  const btnSens = $('btnSens'), warnText = $('warnText');
+  const btnSettings = $('btnSettings'), warnText = $('warnText');
   const textEl = $('text'), pad = $('pad'), padWrap = $('padWrap');
   const unsupported = $('unsupported'), kb = $('kb');
-  const sensEl = $('sens'), sensVal = $('sensVal'), sensRow = $('sensRow');
+  const pinOverlay = $('pinOverlay'), pinTitle = $('pinTitle'), pinMsg = $('pinMsg');
+  const pinErr = $('pinErr'), pinOk = $('pinOk'), pinCancel = $('pinCancel'), pinAlt = $('pinAlt');
+  const pinInput = $('pinInput'), pinInput2 = $('pinInput2');
+  const pinFieldWrap = $('pinFieldWrap'), pinField2Wrap = $('pinField2Wrap');
+  const setOverlay = $('setOverlay'), setPinMsg = $('setPinMsg');
+  const setPinAction = $('setPinAction'), setPinForget = $('setPinForget');
+  const setScan = $('setScan'), setClose = $('setClose');
+  const sensEl = $('sens'), sensVal = $('sensVal');
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
   document.documentElement.classList.toggle(
     'desk-ui',
@@ -722,7 +869,10 @@
     return !!(b && typeof b.requestDevice === 'function' && !b.__beacioCDNStub);
   };
 
-  let device = null, characteristic = null, connected = false;
+  let device = null, characteristic = null, statusChar = null, connected = false;
+  let hidReady = false, pinBusy = false, pinMode = '';
+  let pinLast = null, pinCooldownTimer = 0;
+  const pinWaiters = [];
   let stickyMod = 0;
   const queue = [];
   let pumping = false;
@@ -759,13 +909,17 @@
       disconnected: 'disconnected',
       connecting: 'connecting…',
       connected: 'connected',
+      locked: 'locked',
       error: 'error',
     };
     statusText.textContent = detail || labels[state] || state;
     btnConn.disabled = state === 'connecting';
     btnConn.classList.toggle('is-connected', connected);
+    btnConn.classList.toggle('is-locked', state === 'locked');
     btnConn.classList.toggle('is-error', state === 'error');
-    if (connected) {
+    if (connected && !hidReady) {
+      btnConn.title = 'Tap to enter PIN. Hold / right-click to scan all.';
+    } else if (connected) {
       btnConn.title = 'Tap to disconnect. Hold / right-click to scan all.';
     } else if (state === 'connecting') {
       devName.textContent = '';
@@ -825,9 +979,10 @@
   }
 
   async function pump() {
-    if (pumping) return;
+    if (pumping || pinBusy) return;
     pumping = true;
     while (queue.length) {
+      if (pinBusy) break;
       if (!gattUp()) { queue.length = 0; break; }
       const msg = takeChunk();
       let retries = WRITE_RETRIES;
@@ -854,6 +1009,7 @@
   }
 
   function send(type, b1, b2, coalesce) {
+    if (!hidReady) return;
     if (coalesce) {
       const i = queue.findIndex((m) => m[0] === type);
       if (i >= 0) {
@@ -889,6 +1045,7 @@
     try { localStorage.setItem(STORE_SENS, String(mouseSens)); } catch (_) {}
   });
   loadSens();
+  syncSettingsPin();
 
   function sendMove(dx, dy) {
     moveAccX += dx * mouseSens;
@@ -904,6 +1061,11 @@
 
   function onDisconnected() {
     connected = false;
+    hidReady = false;
+    pinBusy = false;
+    pinWaiters.length = 0;
+    dropPinChar();
+    hidePinOverlay();
     characteristic = null;
     queue.length = 0;
     setStatus('disconnected', 'disconnected — link dropped');
@@ -918,6 +1080,528 @@
     try { localStorage.setItem(STORE, device.id); } catch (_) {}
   }
 
+  function validPin(s) { return /^\d{4,8}$/.test(s || ''); }
+  function pinKey(id) { return STORE_PIN + id; }
+  function skipKey(id) { return STORE_PIN_SKIP + id; }
+  function loadSavedPin(id) {
+    try { return localStorage.getItem(pinKey(id)) || ''; } catch (_) { return ''; }
+  }
+  function rememberPin(id, pin) {
+    try {
+      if (pin) localStorage.setItem(pinKey(id), pin);
+      else localStorage.removeItem(pinKey(id));
+    } catch (_) {}
+  }
+  function loadPinSkip(id) {
+    try { return localStorage.getItem(skipKey(id)) === '1'; } catch (_) { return false; }
+  }
+  function savePinSkip(id, skip) {
+    try {
+      if (skip) localStorage.setItem(skipKey(id), '1');
+      else localStorage.removeItem(skipKey(id));
+    } catch (_) {}
+  }
+
+  function parsePin(dv) {
+    if (!dv || dv.byteLength < 3) return null;
+    return {
+      version: dv.getUint8(0),
+      state: dv.getUint8(1),
+      info: dv.getUint8(2),
+      result: dv.byteLength >= 4 ? dv.getUint8(3) : 0,
+    };
+  }
+  function pinFrame(cmd, digits) {
+    const payload = digits ? new TextEncoder().encode(digits) : new Uint8Array(0);
+    const out = new Uint8Array(4 + payload.length);
+    out[0] = 0xAA; out[1] = 0x01; out[2] = cmd; out[3] = payload.length;
+    if (payload.length) out.set(payload, 4);
+    return out;
+  }
+
+  // Ask the stick to drop this ACL, then fall back to gatt.disconnect().
+  // Linux/BlueZ leaves paired links up after a browser-only disconnect.
+  // Do not call from gattserverdisconnected — that is already too late.
+  // Tab close cannot reliably get this write through.
+  async function hangupThenDisconnect() {
+    queue.length = 0;
+    pinBusy = true;
+    const waitUntil = Date.now() + 200;
+    while (pumping && Date.now() < waitUntil) await sleep(10);
+    if (gattUp()) {
+      try {
+        await writePacket(pinFrame(CMD_HANGUP));
+        await sleep(HANGUP_WAIT_MS);
+      } catch (_) {}
+    }
+    if (device && device.gatt) {
+      try { device.gatt.disconnect(); } catch (_) {}
+    }
+    onDisconnected();
+  }
+
+  function dropPinChar() {
+    if (pinCooldownTimer) { clearInterval(pinCooldownTimer); pinCooldownTimer = 0; }
+    if (statusChar) {
+      try { statusChar.removeEventListener('characteristicvaluechanged', onPinNotify); } catch (_) {}
+      try { statusChar.stopNotifications(); } catch (_) {}
+    }
+    statusChar = null;
+    pinLast = null;
+    syncSettingsPin();
+  }
+
+  function sameUuid(a, b) {
+    return String(a || '').toLowerCase() === String(b || '').toLowerCase();
+  }
+
+  async function findStatusChar(service) {
+    try {
+      return await service.getCharacteristic(STATUS);
+    } catch (_) {}
+    if (typeof service.getCharacteristics !== 'function') return null;
+    try {
+      const all = await service.getCharacteristics();
+      return all.find((c) => sameUuid(c.uuid, STATUS)) || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function kickEncryption() {
+    // iOS/Beacio often will not encrypt until an ENC characteristic is used.
+    // A short write is ignored by firmware (needs 3 bytes) but starts LESC.
+    try {
+      await writePacket(new Uint8Array([0x00]));
+    } catch (_) {}
+  }
+
+  function applyLinkStatus() {
+    if (!connected) return;
+    devName.textContent = (device && device.name) || 'EmergenceKey';
+    if (!statusChar) {
+      setStatus('connected', 'connected — this firmware has no PIN');
+      return;
+    }
+    if (hidReady) {
+      setStatus('connected');
+      return;
+    }
+    if (pinLast && pinLast.state === PIN_ST.COOLDOWN) {
+      setStatus('locked', 'locked out — wait ' + pinLast.info + 's');
+    } else if (pinLast && pinLast.result === PIN_NOSLOT) {
+      setStatus('locked', 'stick cannot track this link — reconnect');
+    } else {
+      setStatus('locked', 'locked — enter PIN');
+    }
+  }
+
+  function currentDeviceId() {
+    if (device && device.id) return device.id;
+    try { return localStorage.getItem(STORE) || ''; } catch (_) { return ''; }
+  }
+  function hasSavedPin() {
+    const id = currentDeviceId();
+    return !!(id && validPin(loadSavedPin(id)));
+  }
+  function hideSettings() {
+    setOverlay.classList.remove('show');
+    btnSettings.classList.remove('on');
+    btnSettings.setAttribute('aria-expanded', 'false');
+  }
+  function showSettings() {
+    hidePinOverlay();
+    syncSettingsPin();
+    setOverlay.classList.add('show');
+    btnSettings.classList.add('on');
+    btnSettings.setAttribute('aria-expanded', 'true');
+  }
+  function syncSettingsPin() {
+    setPinForget.hidden = !hasSavedPin();
+    if (!connected) {
+      setPinMsg.textContent = 'Connect to manage the stick PIN.';
+      setPinAction.hidden = true;
+      return;
+    }
+    if (!statusChar) {
+      setPinMsg.textContent = 'This firmware has no PIN.';
+      setPinAction.hidden = true;
+      return;
+    }
+    const st = pinLast ? pinLast.state : PIN_ST.NONE;
+    if (st === PIN_ST.UNLOCKED) {
+      setPinMsg.textContent = 'PIN is set. Change or clear it here.';
+      setPinAction.hidden = false;
+      setPinAction.textContent = 'Manage PIN';
+    } else if (st === PIN_ST.COOLDOWN) {
+      setPinMsg.textContent = 'Too many wrong tries. Wait, then unlock.';
+      setPinAction.hidden = false;
+      setPinAction.textContent = 'Unlock';
+    } else if (st === PIN_ST.LOCKED) {
+      setPinMsg.textContent = 'This stick has a PIN. Unlock to type.';
+      setPinAction.hidden = false;
+      setPinAction.textContent = 'Unlock';
+    } else {
+      setPinMsg.textContent = 'No PIN stored. Optional — skip if you do not want one.';
+      setPinAction.hidden = false;
+      setPinAction.textContent = 'Set PIN';
+    }
+  }
+
+  function applyPinState(st) {
+    if (!st) return;
+    pinLast = st;
+    if (!statusChar) {
+      hidReady = true;
+      return;
+    }
+    hidReady = st.state === PIN_ST.NONE || st.state === PIN_ST.UNLOCKED;
+    if (st.result === PIN_NOSLOT) hidReady = false;
+    syncSettingsPin();
+    if (connected) applyLinkStatus();
+    if (hidReady && (pinMode === 'unlock' || pinMode === 'cooldown')) hidePinOverlay();
+  }
+
+  function onPinNotify(ev) {
+    const st = parsePin(ev.target.value);
+    if (!st) return;
+    applyPinState(st);
+    const w = pinWaiters.shift();
+    if (w && w.resolve) w.resolve(st);
+  }
+
+  async function readPinStatus() {
+    if (!statusChar) return null;
+    try {
+      const st = parsePin(await statusChar.readValue());
+      if (st) applyPinState(st);
+      return st;
+    } catch (_) {
+      return pinLast;
+    }
+  }
+
+  async function readPinStatusRetry() {
+    for (let i = 0; i < 5; i++) {
+      const st = await readPinStatus();
+      if (st) return st;
+      await sleep(180);
+    }
+    return pinLast;
+  }
+
+  async function sendPinCmd(cmd, digits) {
+    if (!gattUp()) return null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      pinBusy = true;
+      while (pumping) await sleep(20);
+      const waiter = {};
+      const pending = new Promise((r) => { waiter.resolve = r; });
+      pinWaiters.push(waiter);
+      try {
+        await writePacket(pinFrame(cmd, digits));
+      } catch (_) {
+        const i = pinWaiters.indexOf(waiter);
+        if (i >= 0) pinWaiters.splice(i, 1);
+        pinBusy = false;
+        pump();
+        return null;
+      }
+      const timeout = sleep(2200).then(async () => {
+        const i = pinWaiters.indexOf(waiter);
+        if (i >= 0) pinWaiters.splice(i, 1);
+        return readPinStatus();
+      });
+      const st = await Promise.race([
+        pending.then((v) => v),
+        timeout,
+      ]);
+      // resolve waiter shape from notify
+      pinBusy = false;
+      pump();
+      if (st && st.result === PIN_BUSY) {
+        await sleep(220);
+        continue;
+      }
+      return st;
+    }
+    return pinLast;
+  }
+
+  async function attachPin(service, dev) {
+    dropPinChar();
+    await kickEncryption();
+    statusChar = await findStatusChar(service);
+    if (!statusChar) {
+      hidReady = true;
+      syncSettingsPin();
+      return;
+    }
+    try {
+      statusChar.addEventListener('characteristicvaluechanged', onPinNotify);
+      await statusChar.startNotifications();
+    } catch (_) {}
+    const st = await readPinStatusRetry();
+    await followPin(st, dev, true);
+  }
+
+  async function followPin(st, dev, initial) {
+    if (!st) {
+      // Found the status char but could not read it — do not assume unlocked.
+      hidReady = !statusChar;
+      syncSettingsPin();
+      return;
+    }
+    applyPinState(st);
+    if (st.result === PIN_NOSLOT) {
+      showPinOverlay('noslot');
+      return;
+    }
+    if (st.state === PIN_ST.NONE) {
+      hidReady = true;
+      if (initial && !loadPinSkip(dev.id)) showPinOverlay('enroll');
+      return;
+    }
+    if (st.state === PIN_ST.UNLOCKED) return;
+    if (st.state === PIN_ST.COOLDOWN) {
+      showPinOverlay('cooldown');
+      return;
+    }
+    if (initial) {
+      const saved = loadSavedPin(dev.id);
+      if (validPin(saved)) {
+        const next = await sendPinCmd(PIN_UNLOCK, saved);
+        if (next && (next.state === PIN_ST.UNLOCKED || next.result === PIN_OK)) return;
+        if (next && next.result === PIN_WRONG) rememberPin(dev.id, '');
+        if (next && next.state === PIN_ST.COOLDOWN) {
+          showPinOverlay('cooldown');
+          return;
+        }
+      }
+    }
+    showPinOverlay('unlock');
+  }
+
+  function hidePinOverlay() {
+    pinMode = '';
+    pinOverlay.classList.remove('show');
+    pinErr.textContent = '';
+    pinInput.value = '';
+    pinInput2.value = '';
+    if (pinCooldownTimer) { clearInterval(pinCooldownTimer); pinCooldownTimer = 0; }
+  }
+
+  function showPinOverlay(mode) {
+    pinMode = mode;
+    pinErr.textContent = '';
+    pinInput.value = '';
+    pinInput2.value = '';
+    pinFieldWrap.hidden = true;
+    pinField2Wrap.hidden = true;
+    pinCancel.hidden = false;
+    pinOk.hidden = false;
+    pinAlt.hidden = true;
+    pinCancel.textContent = 'Not now';
+    pinOk.classList.remove('danger');
+    if (pinCooldownTimer) { clearInterval(pinCooldownTimer); pinCooldownTimer = 0; }
+
+    if (mode === 'unlock') {
+      pinTitle.textContent = 'Unlock';
+      pinMsg.textContent = 'This stick has a PIN. Enter it to type.';
+      pinFieldWrap.hidden = false;
+      pinOk.textContent = 'Unlock';
+    } else if (mode === 'enroll') {
+      pinTitle.textContent = 'Set a PIN';
+      pinMsg.textContent = 'Prevents anywone from connecting to the EmergenceKey without the code. 4–8 digits. Skip if you do not want one (not recommended).';
+      pinFieldWrap.hidden = false;
+      pinField2Wrap.hidden = false;
+      pinOk.textContent = 'Set PIN';
+    } else if (mode === 'change') {
+      pinTitle.textContent = 'Change PIN';
+      pinMsg.textContent = 'New code, 4–8 digits. Other connections will have to unlock again.';
+      pinFieldWrap.hidden = false;
+      pinField2Wrap.hidden = false;
+      pinOk.textContent = 'Save';
+    } else if (mode === 'clear') {
+      pinTitle.textContent = 'Clear PIN';
+      pinMsg.textContent = 'Anyone who connects will be able to type until you set a PIN again.';
+      pinCancel.textContent = 'Keep PIN';
+      pinOk.textContent = 'Clear PIN';
+      pinOk.classList.add('danger');
+    } else if (mode === 'manage') {
+      pinTitle.textContent = 'PIN';
+      pinMsg.textContent = 'PIN is set. Change the code or remove it.';
+      pinCancel.textContent = 'Close';
+      pinOk.textContent = 'Change PIN';
+      pinAlt.hidden = false;
+    } else if (mode === 'cooldown') {
+      pinTitle.textContent = 'Wait';
+      pinOk.hidden = true;
+      pinCancel.textContent = 'Close';
+      startCooldownTick();
+    } else if (mode === 'noslot') {
+      pinTitle.textContent = 'Reconnect';
+      pinMsg.textContent = 'The stick accepted the link but cannot track it. Disconnect and connect again.';
+      pinOk.hidden = true;
+      pinCancel.textContent = 'Close';
+    }
+    hideSettings();
+    pinOverlay.classList.add('show');
+    if (!pinFieldWrap.hidden) setTimeout(() => pinInput.focus(), 50);
+  }
+
+  function startCooldownTick() {
+    const tick = () => {
+      const sec = pinLast ? pinLast.info : 0;
+      pinMsg.textContent = sec
+        ? 'Too many wrong tries. Wait ' + sec + 's, then unlock.'
+        : 'Cooldown should be over. Close and unlock.';
+      applyLinkStatus();
+    };
+    tick();
+    pinCooldownTimer = setInterval(async () => {
+      const st = await readPinStatus();
+      if (!st || st.state !== PIN_ST.COOLDOWN) {
+        if (pinCooldownTimer) { clearInterval(pinCooldownTimer); pinCooldownTimer = 0; }
+        if (st && st.state === PIN_ST.LOCKED) showPinOverlay('unlock');
+        else if (st && (st.state === PIN_ST.UNLOCKED || st.state === PIN_ST.NONE)) hidePinOverlay();
+        return;
+      }
+      tick();
+    }, 1000);
+  }
+
+  function pinResultError(st) {
+    if (!st) return 'no reply from stick';
+    if (st.result === PIN_WRONG) {
+      const left = st.info;
+      return left ? ('Wrong PIN — ' + left + ' tries left') : 'Wrong PIN';
+    }
+    if (st.result === PIN_BAD) return 'Use 4–8 digits';
+    if (st.result === PIN_DENIED) return 'Unlock first';
+    if (st.result === PIN_FLASH) return 'Stick could not save — try again';
+    if (st.result === PIN_COOL) return 'Wait, then try again';
+    if (st.result === PIN_NOSLOT) return 'Stick cannot track this link — reconnect';
+    if (st.result === PIN_BUSY) return 'Stick busy — try again';
+    return '';
+  }
+
+  async function submitPin() {
+    const id = device && device.id;
+    pinErr.textContent = '';
+    if (pinMode === 'manage') {
+      showPinOverlay('change');
+      return;
+    }
+    if (pinMode === 'clear') {
+      pinOk.disabled = true;
+      const st = await sendPinCmd(PIN_CLEAR, '');
+      pinOk.disabled = false;
+      if (st && (st.result === PIN_OK || st.state === PIN_ST.NONE)) {
+        if (id) rememberPin(id, '');
+        hidePinOverlay();
+        return;
+      }
+      pinErr.textContent = pinResultError(st) || 'Clear failed';
+      if (st && st.result === PIN_NOSLOT) showPinOverlay('noslot');
+      return;
+    }
+    const a = pinInput.value.trim();
+    const b = pinInput2.value.trim();
+    if (pinMode === 'unlock') {
+      if (!validPin(a)) { pinErr.textContent = 'Use 4–8 digits'; return; }
+      pinOk.disabled = true;
+      const st = await sendPinCmd(PIN_UNLOCK, a);
+      pinOk.disabled = false;
+      if (st && (st.state === PIN_ST.UNLOCKED || st.result === PIN_OK)) {
+        if (id) rememberPin(id, a);
+        hidePinOverlay();
+        return;
+      }
+      if (st && st.state === PIN_ST.COOLDOWN) {
+        showPinOverlay('cooldown');
+        return;
+      }
+      pinErr.textContent = pinResultError(st) || 'Unlock failed';
+      pinInput.select();
+      return;
+    }
+    if (pinMode === 'enroll' || pinMode === 'change') {
+      if (!validPin(a)) { pinErr.textContent = 'Use 4–8 digits'; return; }
+      if (a !== b) { pinErr.textContent = 'PINs do not match'; return; }
+      pinOk.disabled = true;
+      const st = await sendPinCmd(PIN_SET, a);
+      pinOk.disabled = false;
+      if (st && (st.result === PIN_OK || st.state === PIN_ST.UNLOCKED)) {
+        if (id) {
+          rememberPin(id, a);
+          savePinSkip(id, false);
+        }
+        hidePinOverlay();
+        return;
+      }
+      pinErr.textContent = pinResultError(st) || 'Could not set PIN';
+    }
+  }
+
+  function cancelPin() {
+    if (pinMode === 'enroll' && device) savePinSkip(device.id, true);
+    if (pinMode === 'change' || pinMode === 'clear') {
+      showPinOverlay('manage');
+      return;
+    }
+    hidePinOverlay();
+  }
+
+  function openPinPanel() {
+    if (!connected || !statusChar) return;
+    const st = pinLast ? pinLast.state : PIN_ST.NONE;
+    if (st === PIN_ST.COOLDOWN) showPinOverlay('cooldown');
+    else if (st === PIN_ST.LOCKED) showPinOverlay('unlock');
+    else if (st === PIN_ST.UNLOCKED) showPinOverlay('manage');
+    else showPinOverlay('enroll');
+  }
+
+  pinOk.addEventListener('click', () => { submitPin(); });
+  pinCancel.addEventListener('click', cancelPin);
+  pinAlt.addEventListener('click', () => { showPinOverlay('clear'); });
+  pinOverlay.addEventListener('click', (e) => {
+    if (e.target === pinOverlay) cancelPin();
+  });
+  btnSettings.addEventListener('click', () => {
+    if (setOverlay.classList.contains('show')) hideSettings();
+    else showSettings();
+  });
+  setClose.addEventListener('click', hideSettings);
+  setOverlay.addEventListener('click', (e) => {
+    if (e.target === setOverlay) hideSettings();
+  });
+  setPinAction.addEventListener('click', openPinPanel);
+  setPinForget.addEventListener('click', () => {
+    const id = currentDeviceId();
+    if (id) rememberPin(id, '');
+    syncSettingsPin();
+  });
+  setScan.addEventListener('click', async () => {
+    hideSettings();
+    if (connected && device) await hangupThenDisconnect();
+    connect(true);
+  });
+  function digitsOnly(el) {
+    el.addEventListener('input', () => {
+      el.value = el.value.replace(/\D/g, '').slice(0, 8);
+    });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submitPin(); }
+    });
+  }
+  digitsOnly(pinInput);
+  digitsOnly(pinInput2);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && pinMode) cancelPin();
+    else if (e.key === 'Escape' && setOverlay.classList.contains('show')) hideSettings();
+  });
+
   async function gattConnect(dev) {
     setStatus('connecting');
     bindDevice(dev);
@@ -925,9 +1609,15 @@
     const service = await server.getPrimaryService(SERVICE);
     characteristic = await service.getCharacteristic(WRITE);
     connected = true;
-    setStatus('connected');
-    devName.textContent = dev.name || 'EmergenceKey';
+    hidReady = false;
     canReconnect = false;
+    try {
+      await attachPin(service, dev);
+    } catch (_) {
+      hidReady = !statusChar;
+    }
+    if (!connected || !device || !device.gatt || !device.gatt.connected) return;
+    applyLinkStatus();
   }
 
   async function connect(scanAll) {
@@ -938,8 +1628,7 @@
       return;
     }
     if (connected && device) {
-      try { device.gatt.disconnect(); } catch (_) {}
-      onDisconnected();
+      await hangupThenDisconnect();
       setStatus('disconnected');
       return;
     }
@@ -952,6 +1641,8 @@
       await gattConnect(dev);
     } catch (err) {
       connected = false;
+      hidReady = false;
+      dropPinChar();
       characteristic = null;
       if (err && err.name === 'NotFoundError') {
         setStatus('disconnected');
@@ -1017,7 +1708,7 @@
   }
   async function sendText(withEnter) {
     const s = textEl.value;
-    if (!connected) { setStatus('error', 'not connected'); return; }
+    if (!connected || !hidReady) { setStatus('error', hidReady ? 'not connected' : 'unlock first'); return; }
     btnSend.disabled = true;
     for (const ch of s) {
       const pair = KEY[ch];
@@ -1230,6 +1921,10 @@
   btnConn.addEventListener('pointerleave', cancelStatusHold);
   btnConn.addEventListener('click', () => {
     if (statusHeld) { statusHeld = false; return; }
+    if (connected && !hidReady) {
+      openPinPanel();
+      return;
+    }
     linkUp();
   });
   btnConn.addEventListener('contextmenu', (e) => {
@@ -1251,7 +1946,7 @@
   btnMedia.addEventListener('click', () => {
     const hidden = kb.classList.toggle('media-hidden');
     btnMedia.classList.toggle('on', !hidden);
-    btnMedia.textContent = hidden ? 'Show media' : 'Hide media';
+    btnMedia.textContent = hidden ? 'Show media keys' : 'Hide media keys';
   });
   btnPad.addEventListener('click', () => {
     const hidden = padWrap.classList.toggle('hidden');
@@ -1265,12 +1960,6 @@
     btnKb.classList.add('on');
     btnKb.textContent = 'Hide keys';
   }
-  btnSens.addEventListener('click', () => {
-    const hidden = sensRow.classList.toggle('hidden');
-    btnSens.classList.toggle('on', !hidden);
-    btnSens.textContent = hidden ? 'Mouse speed' : 'Hide speed';
-  });
-
   /* ---- trackpad ---- */
   const TAP_PX = 14, TAP_MS = 300, DBL_MS = 340, SCROLL_DIV = 6;
   const pts = new Map();
@@ -1552,7 +2241,7 @@
 
   async function enterCapture() {
     if (capturing) { exitCapture(); return; }
-    if (!connected) { setStatus('error', 'connect first'); return; }
+    if (!connected || !hidReady) { setStatus('error', hidReady ? 'connect first' : 'unlock first'); return; }
     try {
       await pad.requestFullscreen({ navigationUI: 'hide' });
     } catch (_) {
