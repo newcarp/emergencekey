@@ -73,17 +73,24 @@
     .status {
       display: flex;
       align-items: center;
+      justify-content: center;
       gap: 8px;
-      flex: 1;
+      flex: 0 1 auto;
+      width: max-content;
+      max-width: 100%;
       min-width: 0;
       min-height: 40px;
-      padding: 4px 10px;
+      padding: 6px 20px;
       border: 1px solid var(--border);
       border-radius: 8px;
       background: var(--panel-2);
-      text-align: left;
+      text-align: center;
       -webkit-appearance: none;
       appearance: none;
+    }
+    .status-copy {
+      min-width: 0;
+      text-align: center;
     }
     .status.is-connected { border-color: var(--accent-dim); }
     .status.is-locked { border-color: #2a4a6a; }
@@ -131,8 +138,14 @@
         flex: 1 1 100%;
       }
       .status {
+        flex: 1;
+        width: auto;
         min-height: 40px;
+        padding: 4px 10px;
+        justify-content: flex-start;
+        text-align: left;
       }
+      .status-copy { text-align: left; }
       .bar-btns {
         flex: 1 1 100%;
         display: flex;
@@ -620,7 +633,7 @@
       </button>
       <button type="button" class="status" id="btnConn" title="Tap to connect. Hold / right-click to scan all.">
         <span class="dot" id="dot"></span>
-        <div style="min-width:0">
+        <div class="status-copy">
           <div id="statusText">disconnected</div>
           <div id="devName">tap to connect</div>
         </div>
