@@ -68,6 +68,7 @@
       appearance: none;
     }
     .status.is-connected { border-color: var(--accent-dim); }
+    .status.is-locked { border-color: #2a4a6a; }
     .status.is-error { border-color: #5a2233; }
     .dot {
       width: 10px; height: 10px; border-radius: 50%;
@@ -76,6 +77,7 @@
     }
     .dot.connecting { background: var(--warn); animation: pulse 1s ease-in-out infinite; }
     .dot.connected { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+    .dot.locked { background: var(--blue); box-shadow: 0 0 8px var(--blue); }
     .dot.error { background: var(--danger); }
     @keyframes pulse { 50% { opacity: .35; } }
     #statusText {
@@ -517,6 +519,49 @@
       font-size: 13px;
     }
     #unsupported.show { display: block; }
+
+    .pin-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+      background: rgba(6, 8, 12, .62);
+    }
+    .pin-overlay.show { display: flex; }
+    .pin-card {
+      width: min(420px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 14px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .pin-title { font-size: 16px; font-weight: 700; }
+    .pin-msg { margin: 0; font-size: 13px; line-height: 1.4; color: var(--muted); }
+    .pin-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+    .pin-field[hidden] { display: none !important; }
+    .pin-field input {
+      min-height: 44px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-2);
+      letter-spacing: .18em;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .pin-field input:focus { outline: 2px solid var(--blue); outline-offset: 1px; }
+    .pin-err { margin: 0; min-height: 1.2em; font-size: 12px; font-weight: 600; color: var(--danger); }
+    .pin-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pin-actions .btn { flex: 1; min-width: 96px; }
+    @media (min-width: 560px) {
+      .pin-overlay { align-items: center; }
+    }
     @media (min-height: 820px) {
       .key { min-height: 40px; font-size: 14px; }
       .toprow .key { min-height: 32px; font-size: 12px; }
@@ -545,6 +590,7 @@
       <button class="btn" id="btnMedia" title="Show / hide media controls">Show media</button>
       <button class="btn" id="btnFkeys" title="Show / hide Esc and F1–F12">Show F keys</button>
       <button class="btn" id="btnSens" title="Show / hide mouse speed">Mouse speed</button>
+      <button class="btn" id="btnPin" hidden title="Set, change, or clear the stick PIN">Set PIN</button>
       <button class="btn capture" id="btnCapture" hidden>Capture</button>
     </div>
   </div>
@@ -689,17 +735,45 @@
     </div>
   </div>
 
+  <div class="pin-overlay" id="pinOverlay">
+    <div class="pin-card" role="dialog" aria-modal="true" aria-labelledby="pinTitle">
+      <div class="pin-title" id="pinTitle">PIN</div>
+      <p class="pin-msg" id="pinMsg"></p>
+      <label class="pin-field" id="pinFieldWrap">
+        <span id="pinLabel">PIN (4–8 digits)</span>
+        <input id="pinInput" type="password" inputmode="numeric" maxlength="8" autocomplete="one-time-code" enterkeyhint="done">
+      </label>
+      <label class="pin-field" id="pinField2Wrap" hidden>
+        <span>Confirm</span>
+        <input id="pinInput2" type="password" inputmode="numeric" maxlength="8" autocomplete="one-time-code" enterkeyhint="done">
+      </label>
+      <p class="pin-err" id="pinErr"></p>
+      <div class="pin-actions">
+        <button type="button" class="btn" id="pinCancel">Not now</button>
+        <button type="button" class="btn danger" id="pinAlt" hidden>Clear PIN</button>
+        <button type="button" class="btn primary" id="pinOk">Unlock</button>
+      </div>
+    </div>
+  </div>
+
 <script src="https://beacio.com/beacio.js"></script>
 <script>
 (() => {
   const SERVICE = '2d2a0001-8a5a-4e76-a2e3-1e57d9a1b001';
   const WRITE   = '2d2a0002-8a5a-4e76-a2e3-1e57d9a1b001';
+  const STATUS  = '2d2a0003-8a5a-4e76-a2e3-1e57d9a1b001';
   const GAP_MS  = 12;
   // Default ATT MTU is 23 → 20-byte payload. Firmware accepts batched 3-byte v1 frames.
   const MAX_PACKET = 18;
   const WRITE_RETRIES = 3;
   const STORE   = 'emergencekey-device-id';
   const STORE_SENS = 'emergencekey-mouse-sens';
+  const STORE_PIN = 'emergencekey-pin:';
+  const STORE_PIN_SKIP = 'emergencekey-pin-skip:';
+  const PIN_UNLOCK = 0x30, PIN_SET = 0x31, PIN_CLEAR = 0x32;
+  const PIN_ST = { NONE: 0, LOCKED: 1, UNLOCKED: 2, COOLDOWN: 3 };
+  const PIN_OK = 1, PIN_BAD = 2, PIN_DENIED = 3, PIN_FLASH = 4;
+  const PIN_BUSY = 5, PIN_WRONG = 6, PIN_COOL = 7, PIN_NOSLOT = 8;
 
   const $ = (id) => document.getElementById(id);
   const dot = $('dot'), statusText = $('statusText'), devName = $('devName');
@@ -707,9 +781,13 @@
   let canReconnect = false;
   const btnCapture = $('btnCapture'), btnKb = $('btnKb'), btnFkeys = $('btnFkeys');
   const btnMedia = $('btnMedia'), btnPad = $('btnPad');
-  const btnSens = $('btnSens'), warnText = $('warnText');
+  const btnSens = $('btnSens'), btnPin = $('btnPin'), warnText = $('warnText');
   const textEl = $('text'), pad = $('pad'), padWrap = $('padWrap');
   const unsupported = $('unsupported'), kb = $('kb');
+  const pinOverlay = $('pinOverlay'), pinTitle = $('pinTitle'), pinMsg = $('pinMsg');
+  const pinErr = $('pinErr'), pinOk = $('pinOk'), pinCancel = $('pinCancel'), pinAlt = $('pinAlt');
+  const pinInput = $('pinInput'), pinInput2 = $('pinInput2');
+  const pinFieldWrap = $('pinFieldWrap'), pinField2Wrap = $('pinField2Wrap');
   const sensEl = $('sens'), sensVal = $('sensVal'), sensRow = $('sensRow');
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
   document.documentElement.classList.toggle(
@@ -722,7 +800,10 @@
     return !!(b && typeof b.requestDevice === 'function' && !b.__beacioCDNStub);
   };
 
-  let device = null, characteristic = null, connected = false;
+  let device = null, characteristic = null, statusChar = null, connected = false;
+  let hidReady = false, pinBusy = false, pinMode = '';
+  let pinLast = null, pinCooldownTimer = 0;
+  const pinWaiters = [];
   let stickyMod = 0;
   const queue = [];
   let pumping = false;
@@ -759,11 +840,13 @@
       disconnected: 'disconnected',
       connecting: 'connecting…',
       connected: 'connected',
+      locked: 'locked',
       error: 'error',
     };
     statusText.textContent = detail || labels[state] || state;
     btnConn.disabled = state === 'connecting';
     btnConn.classList.toggle('is-connected', connected);
+    btnConn.classList.toggle('is-locked', state === 'locked');
     btnConn.classList.toggle('is-error', state === 'error');
     if (connected) {
       btnConn.title = 'Tap to disconnect. Hold / right-click to scan all.';
@@ -825,9 +908,10 @@
   }
 
   async function pump() {
-    if (pumping) return;
+    if (pumping || pinBusy) return;
     pumping = true;
     while (queue.length) {
+      if (pinBusy) break;
       if (!gattUp()) { queue.length = 0; break; }
       const msg = takeChunk();
       let retries = WRITE_RETRIES;
@@ -854,6 +938,7 @@
   }
 
   function send(type, b1, b2, coalesce) {
+    if (!hidReady) return;
     if (coalesce) {
       const i = queue.findIndex((m) => m[0] === type);
       if (i >= 0) {
@@ -904,6 +989,11 @@
 
   function onDisconnected() {
     connected = false;
+    hidReady = false;
+    pinBusy = false;
+    pinWaiters.length = 0;
+    dropPinChar();
+    hidePinOverlay();
     characteristic = null;
     queue.length = 0;
     setStatus('disconnected', 'disconnected — link dropped');
@@ -918,6 +1008,409 @@
     try { localStorage.setItem(STORE, device.id); } catch (_) {}
   }
 
+  function validPin(s) { return /^\d{4,8}$/.test(s || ''); }
+  function pinKey(id) { return STORE_PIN + id; }
+  function skipKey(id) { return STORE_PIN_SKIP + id; }
+  function loadSavedPin(id) {
+    try { return localStorage.getItem(pinKey(id)) || ''; } catch (_) { return ''; }
+  }
+  function rememberPin(id, pin) {
+    try {
+      if (pin) localStorage.setItem(pinKey(id), pin);
+      else localStorage.removeItem(pinKey(id));
+    } catch (_) {}
+  }
+  function loadPinSkip(id) {
+    try { return localStorage.getItem(skipKey(id)) === '1'; } catch (_) { return false; }
+  }
+  function savePinSkip(id, skip) {
+    try {
+      if (skip) localStorage.setItem(skipKey(id), '1');
+      else localStorage.removeItem(skipKey(id));
+    } catch (_) {}
+  }
+
+  function parsePin(dv) {
+    if (!dv || dv.byteLength < 3) return null;
+    return {
+      version: dv.getUint8(0),
+      state: dv.getUint8(1),
+      info: dv.getUint8(2),
+      result: dv.byteLength >= 4 ? dv.getUint8(3) : 0,
+    };
+  }
+  function pinFrame(cmd, digits) {
+    const payload = digits ? new TextEncoder().encode(digits) : new Uint8Array(0);
+    const out = new Uint8Array(4 + payload.length);
+    out[0] = 0xAA; out[1] = 0x01; out[2] = cmd; out[3] = payload.length;
+    if (payload.length) out.set(payload, 4);
+    return out;
+  }
+
+  function dropPinChar() {
+    if (pinCooldownTimer) { clearInterval(pinCooldownTimer); pinCooldownTimer = 0; }
+    if (statusChar) {
+      try { statusChar.removeEventListener('characteristicvaluechanged', onPinNotify); } catch (_) {}
+      try { statusChar.stopNotifications(); } catch (_) {}
+    }
+    statusChar = null;
+    pinLast = null;
+    btnPin.hidden = true;
+  }
+
+  function applyLinkStatus() {
+    if (!connected) return;
+    devName.textContent = (device && device.name) || 'EmergenceKey';
+    if (!statusChar || hidReady) {
+      setStatus('connected');
+      return;
+    }
+    if (pinLast && pinLast.state === PIN_ST.COOLDOWN) {
+      setStatus('locked', 'locked out — wait ' + pinLast.info + 's');
+    } else if (pinLast && pinLast.result === PIN_NOSLOT) {
+      setStatus('locked', 'stick cannot track this link — reconnect');
+    } else {
+      setStatus('locked', 'locked — enter PIN');
+    }
+  }
+
+  function syncPinBtn() {
+    if (!statusChar || !connected) {
+      btnPin.hidden = true;
+      return;
+    }
+    btnPin.hidden = false;
+    const st = pinLast ? pinLast.state : PIN_ST.NONE;
+    if (st === PIN_ST.UNLOCKED) btnPin.textContent = 'PIN';
+    else if (st === PIN_ST.NONE) btnPin.textContent = 'Set PIN';
+    else btnPin.textContent = 'Unlock';
+  }
+
+  function applyPinState(st) {
+    if (!st) return;
+    pinLast = st;
+    if (!statusChar) {
+      hidReady = true;
+      return;
+    }
+    hidReady = st.state === PIN_ST.NONE || st.state === PIN_ST.UNLOCKED;
+    if (st.result === PIN_NOSLOT) hidReady = false;
+    syncPinBtn();
+    if (connected) applyLinkStatus();
+    if (hidReady && (pinMode === 'unlock' || pinMode === 'cooldown')) hidePinOverlay();
+  }
+
+  function onPinNotify(ev) {
+    const st = parsePin(ev.target.value);
+    if (!st) return;
+    applyPinState(st);
+    const w = pinWaiters.shift();
+    if (w && w.resolve) w.resolve(st);
+  }
+
+  async function readPinStatus() {
+    if (!statusChar) return null;
+    try {
+      const st = parsePin(await statusChar.readValue());
+      if (st) applyPinState(st);
+      return st;
+    } catch (_) {
+      return pinLast;
+    }
+  }
+
+  async function sendPinCmd(cmd, digits) {
+    if (!gattUp()) return null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      pinBusy = true;
+      while (pumping) await sleep(20);
+      const waiter = {};
+      const pending = new Promise((r) => { waiter.resolve = r; });
+      pinWaiters.push(waiter);
+      try {
+        await writePacket(pinFrame(cmd, digits));
+      } catch (_) {
+        const i = pinWaiters.indexOf(waiter);
+        if (i >= 0) pinWaiters.splice(i, 1);
+        pinBusy = false;
+        pump();
+        return null;
+      }
+      const timeout = sleep(2200).then(async () => {
+        const i = pinWaiters.indexOf(waiter);
+        if (i >= 0) pinWaiters.splice(i, 1);
+        return readPinStatus();
+      });
+      const st = await Promise.race([
+        pending.then((v) => v),
+        timeout,
+      ]);
+      // resolve waiter shape from notify
+      pinBusy = false;
+      pump();
+      if (st && st.result === PIN_BUSY) {
+        await sleep(220);
+        continue;
+      }
+      return st;
+    }
+    return pinLast;
+  }
+
+  async function attachPin(service, dev) {
+    dropPinChar();
+    try {
+      statusChar = await service.getCharacteristic(STATUS);
+    } catch (_) {
+      statusChar = null;
+      hidReady = true;
+      btnPin.hidden = true;
+      return;
+    }
+    btnPin.hidden = false;
+    try {
+      statusChar.addEventListener('characteristicvaluechanged', onPinNotify);
+      await statusChar.startNotifications();
+    } catch (_) {}
+    const st = await readPinStatus();
+    await followPin(st, dev, true);
+  }
+
+  async function followPin(st, dev, initial) {
+    if (!st) {
+      hidReady = true;
+      return;
+    }
+    applyPinState(st);
+    if (st.result === PIN_NOSLOT) {
+      showPinOverlay('noslot');
+      return;
+    }
+    if (st.state === PIN_ST.NONE) {
+      hidReady = true;
+      if (initial && !loadPinSkip(dev.id)) showPinOverlay('enroll');
+      return;
+    }
+    if (st.state === PIN_ST.UNLOCKED) return;
+    if (st.state === PIN_ST.COOLDOWN) {
+      showPinOverlay('cooldown');
+      return;
+    }
+    if (initial) {
+      const saved = loadSavedPin(dev.id);
+      if (validPin(saved)) {
+        const next = await sendPinCmd(PIN_UNLOCK, saved);
+        if (next && (next.state === PIN_ST.UNLOCKED || next.result === PIN_OK)) return;
+        if (next && next.result === PIN_WRONG) rememberPin(dev.id, '');
+        if (next && next.state === PIN_ST.COOLDOWN) {
+          showPinOverlay('cooldown');
+          return;
+        }
+      }
+    }
+    showPinOverlay('unlock');
+  }
+
+  function hidePinOverlay() {
+    pinMode = '';
+    pinOverlay.classList.remove('show');
+    pinErr.textContent = '';
+    pinInput.value = '';
+    pinInput2.value = '';
+    if (pinCooldownTimer) { clearInterval(pinCooldownTimer); pinCooldownTimer = 0; }
+  }
+
+  function showPinOverlay(mode) {
+    pinMode = mode;
+    pinErr.textContent = '';
+    pinInput.value = '';
+    pinInput2.value = '';
+    pinFieldWrap.hidden = true;
+    pinField2Wrap.hidden = true;
+    pinCancel.hidden = false;
+    pinOk.hidden = false;
+    pinAlt.hidden = true;
+    pinCancel.textContent = 'Not now';
+    pinOk.classList.remove('danger');
+    if (pinCooldownTimer) { clearInterval(pinCooldownTimer); pinCooldownTimer = 0; }
+
+    if (mode === 'unlock') {
+      pinTitle.textContent = 'Unlock';
+      pinMsg.textContent = 'This stick has a PIN. Enter it to type.';
+      pinFieldWrap.hidden = false;
+      pinOk.textContent = 'Unlock';
+    } else if (mode === 'enroll') {
+      pinTitle.textContent = 'Set a PIN';
+      pinMsg.textContent = 'Optional. 6 digits or more is stronger. Skip to use the stick without a code.';
+      pinFieldWrap.hidden = false;
+      pinField2Wrap.hidden = false;
+      pinOk.textContent = 'Set PIN';
+    } else if (mode === 'change') {
+      pinTitle.textContent = 'Change PIN';
+      pinMsg.textContent = 'New code, 4–8 digits. Other connections will have to unlock again.';
+      pinFieldWrap.hidden = false;
+      pinField2Wrap.hidden = false;
+      pinOk.textContent = 'Save';
+    } else if (mode === 'clear') {
+      pinTitle.textContent = 'Clear PIN';
+      pinMsg.textContent = 'Anyone who connects will be able to type until you set a PIN again.';
+      pinCancel.textContent = 'Keep PIN';
+      pinOk.textContent = 'Clear PIN';
+      pinOk.classList.add('danger');
+    } else if (mode === 'manage') {
+      pinTitle.textContent = 'PIN';
+      pinMsg.textContent = 'This connection is unlocked. Change the code or remove it.';
+      pinCancel.textContent = 'Close';
+      pinOk.textContent = 'Change PIN';
+      pinAlt.hidden = false;
+    } else if (mode === 'cooldown') {
+      pinTitle.textContent = 'Wait';
+      pinOk.hidden = true;
+      pinCancel.textContent = 'Close';
+      startCooldownTick();
+    } else if (mode === 'noslot') {
+      pinTitle.textContent = 'Reconnect';
+      pinMsg.textContent = 'The stick accepted the link but cannot track it. Disconnect and connect again.';
+      pinOk.hidden = true;
+      pinCancel.textContent = 'Close';
+    }
+    pinOverlay.classList.add('show');
+    if (!pinFieldWrap.hidden) setTimeout(() => pinInput.focus(), 50);
+  }
+
+  function startCooldownTick() {
+    const tick = () => {
+      const sec = pinLast ? pinLast.info : 0;
+      pinMsg.textContent = sec
+        ? 'Too many wrong tries. Wait ' + sec + 's, then unlock.'
+        : 'Cooldown should be over. Close and unlock.';
+      applyLinkStatus();
+    };
+    tick();
+    pinCooldownTimer = setInterval(async () => {
+      const st = await readPinStatus();
+      if (!st || st.state !== PIN_ST.COOLDOWN) {
+        if (pinCooldownTimer) { clearInterval(pinCooldownTimer); pinCooldownTimer = 0; }
+        if (st && st.state === PIN_ST.LOCKED) showPinOverlay('unlock');
+        else if (st && (st.state === PIN_ST.UNLOCKED || st.state === PIN_ST.NONE)) hidePinOverlay();
+        return;
+      }
+      tick();
+    }, 1000);
+  }
+
+  function pinResultError(st) {
+    if (!st) return 'no reply from stick';
+    if (st.result === PIN_WRONG) {
+      const left = st.info;
+      return left ? ('Wrong PIN — ' + left + ' tries left') : 'Wrong PIN';
+    }
+    if (st.result === PIN_BAD) return 'Use 4–8 digits';
+    if (st.result === PIN_DENIED) return 'Unlock first';
+    if (st.result === PIN_FLASH) return 'Stick could not save — try again';
+    if (st.result === PIN_COOL) return 'Wait, then try again';
+    if (st.result === PIN_NOSLOT) return 'Stick cannot track this link — reconnect';
+    if (st.result === PIN_BUSY) return 'Stick busy — try again';
+    return '';
+  }
+
+  async function submitPin() {
+    const id = device && device.id;
+    pinErr.textContent = '';
+    if (pinMode === 'manage') {
+      showPinOverlay('change');
+      return;
+    }
+    if (pinMode === 'clear') {
+      pinOk.disabled = true;
+      const st = await sendPinCmd(PIN_CLEAR, '');
+      pinOk.disabled = false;
+      if (st && (st.result === PIN_OK || st.state === PIN_ST.NONE)) {
+        if (id) rememberPin(id, '');
+        hidePinOverlay();
+        return;
+      }
+      pinErr.textContent = pinResultError(st) || 'Clear failed';
+      if (st && st.result === PIN_NOSLOT) showPinOverlay('noslot');
+      return;
+    }
+    const a = pinInput.value.trim();
+    const b = pinInput2.value.trim();
+    if (pinMode === 'unlock') {
+      if (!validPin(a)) { pinErr.textContent = 'Use 4–8 digits'; return; }
+      pinOk.disabled = true;
+      const st = await sendPinCmd(PIN_UNLOCK, a);
+      pinOk.disabled = false;
+      if (st && (st.state === PIN_ST.UNLOCKED || st.result === PIN_OK)) {
+        if (id) rememberPin(id, a);
+        hidePinOverlay();
+        return;
+      }
+      if (st && st.state === PIN_ST.COOLDOWN) {
+        showPinOverlay('cooldown');
+        return;
+      }
+      pinErr.textContent = pinResultError(st) || 'Unlock failed';
+      pinInput.select();
+      return;
+    }
+    if (pinMode === 'enroll' || pinMode === 'change') {
+      if (!validPin(a)) { pinErr.textContent = 'Use 4–8 digits'; return; }
+      if (a !== b) { pinErr.textContent = 'PINs do not match'; return; }
+      pinOk.disabled = true;
+      const st = await sendPinCmd(PIN_SET, a);
+      pinOk.disabled = false;
+      if (st && (st.result === PIN_OK || st.state === PIN_ST.UNLOCKED)) {
+        if (id) {
+          rememberPin(id, a);
+          savePinSkip(id, false);
+        }
+        hidePinOverlay();
+        return;
+      }
+      pinErr.textContent = pinResultError(st) || 'Could not set PIN';
+    }
+  }
+
+  function cancelPin() {
+    if (pinMode === 'enroll' && device) savePinSkip(device.id, true);
+    if (pinMode === 'change' || pinMode === 'clear') {
+      showPinOverlay('manage');
+      return;
+    }
+    hidePinOverlay();
+  }
+
+  function openPinPanel() {
+    if (!connected || !statusChar) return;
+    const st = pinLast ? pinLast.state : PIN_ST.NONE;
+    if (st === PIN_ST.COOLDOWN) showPinOverlay('cooldown');
+    else if (st === PIN_ST.LOCKED) showPinOverlay('unlock');
+    else if (st === PIN_ST.UNLOCKED) showPinOverlay('manage');
+    else showPinOverlay('enroll');
+  }
+
+  pinOk.addEventListener('click', () => { submitPin(); });
+  pinCancel.addEventListener('click', cancelPin);
+  pinAlt.addEventListener('click', () => { showPinOverlay('clear'); });
+  btnPin.addEventListener('click', openPinPanel);
+  pinOverlay.addEventListener('click', (e) => {
+    if (e.target === pinOverlay) cancelPin();
+  });
+  function digitsOnly(el) {
+    el.addEventListener('input', () => {
+      el.value = el.value.replace(/\D/g, '').slice(0, 8);
+    });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submitPin(); }
+    });
+  }
+  digitsOnly(pinInput);
+  digitsOnly(pinInput2);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && pinMode) cancelPin();
+  });
+
   async function gattConnect(dev) {
     setStatus('connecting');
     bindDevice(dev);
@@ -925,9 +1418,15 @@
     const service = await server.getPrimaryService(SERVICE);
     characteristic = await service.getCharacteristic(WRITE);
     connected = true;
-    setStatus('connected');
-    devName.textContent = dev.name || 'EmergenceKey';
+    hidReady = false;
     canReconnect = false;
+    try {
+      await attachPin(service, dev);
+    } catch (_) {
+      hidReady = !statusChar;
+    }
+    if (!connected || !device || !device.gatt || !device.gatt.connected) return;
+    applyLinkStatus();
   }
 
   async function connect(scanAll) {
@@ -952,6 +1451,8 @@
       await gattConnect(dev);
     } catch (err) {
       connected = false;
+      hidReady = false;
+      dropPinChar();
       characteristic = null;
       if (err && err.name === 'NotFoundError') {
         setStatus('disconnected');
@@ -1017,7 +1518,7 @@
   }
   async function sendText(withEnter) {
     const s = textEl.value;
-    if (!connected) { setStatus('error', 'not connected'); return; }
+    if (!connected || !hidReady) { setStatus('error', hidReady ? 'not connected' : 'unlock first'); return; }
     btnSend.disabled = true;
     for (const ch of s) {
       const pair = KEY[ch];
@@ -1552,7 +2053,7 @@
 
   async function enterCapture() {
     if (capturing) { exitCapture(); return; }
-    if (!connected) { setStatus('error', 'connect first'); return; }
+    if (!connected || !hidReady) { setStatus('error', hidReady ? 'connect first' : 'unlock first'); return; }
     try {
       await pad.requestFullscreen({ navigationUI: 'hide' });
     } catch (_) {
