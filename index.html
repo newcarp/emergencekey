@@ -835,6 +835,8 @@
   const STORE_PIN = 'emergencekey-pin:';
   const STORE_PIN_SKIP = 'emergencekey-pin-skip:';
   const PIN_UNLOCK = 0x30, PIN_SET = 0x31, PIN_CLEAR = 0x32;
+  const CMD_HANGUP = 0x33;
+  const HANGUP_WAIT_MS = 80;
   const PIN_ST = { NONE: 0, LOCKED: 1, UNLOCKED: 2, COOLDOWN: 3 };
   const PIN_OK = 1, PIN_BAD = 2, PIN_DENIED = 3, PIN_FLASH = 4;
   const PIN_BUSY = 5, PIN_WRONG = 6, PIN_COOL = 7, PIN_NOSLOT = 8;
@@ -1115,6 +1117,27 @@
     out[0] = 0xAA; out[1] = 0x01; out[2] = cmd; out[3] = payload.length;
     if (payload.length) out.set(payload, 4);
     return out;
+  }
+
+  // Ask the stick to drop this ACL, then fall back to gatt.disconnect().
+  // Linux/BlueZ leaves paired links up after a browser-only disconnect.
+  // Do not call from gattserverdisconnected — that is already too late.
+  // Tab close cannot reliably get this write through.
+  async function hangupThenDisconnect() {
+    queue.length = 0;
+    pinBusy = true;
+    const waitUntil = Date.now() + 200;
+    while (pumping && Date.now() < waitUntil) await sleep(10);
+    if (gattUp()) {
+      try {
+        await writePacket(pinFrame(CMD_HANGUP));
+        await sleep(HANGUP_WAIT_MS);
+      } catch (_) {}
+    }
+    if (device && device.gatt) {
+      try { device.gatt.disconnect(); } catch (_) {}
+    }
+    onDisconnected();
   }
 
   function dropPinChar() {
@@ -1559,12 +1582,9 @@
     if (id) rememberPin(id, '');
     syncSettingsPin();
   });
-  setScan.addEventListener('click', () => {
+  setScan.addEventListener('click', async () => {
     hideSettings();
-    if (connected && device) {
-      try { device.gatt.disconnect(); } catch (_) {}
-      onDisconnected();
-    }
+    if (connected && device) await hangupThenDisconnect();
     connect(true);
   });
   function digitsOnly(el) {
@@ -1608,8 +1628,7 @@
       return;
     }
     if (connected && device) {
-      try { device.gatt.disconnect(); } catch (_) {}
-      onDisconnected();
+      await hangupThenDisconnect();
       setStatus('disconnected');
       return;
     }
