@@ -839,6 +839,9 @@
   const SERVICE = '2d2a0001-8a5a-4e76-a2e3-1e57d9a1b001';
   const WRITE   = '2d2a0002-8a5a-4e76-a2e3-1e57d9a1b001';
   const STATUS  = '2d2a0003-8a5a-4e76-a2e3-1e57d9a1b001';
+  const GAP_ACCESS = 'generic_access';
+  const GAP_NAME   = 'gap.device_name';
+  const OPTIONAL_SERVICES = [SERVICE, GAP_ACCESS];
   const GAP_MS  = 12;
   // Default ATT MTU is 23 → 20-byte payload. Firmware accepts batched 3-byte v1 frames.
   const MAX_PACKET = 18;
@@ -847,6 +850,7 @@
   const STORE_SENS = 'emergencekey-mouse-sens';
   const STORE_PIN = 'emergencekey-pin:';
   const STORE_PIN_SKIP = 'emergencekey-pin-skip:';
+  const STORE_NAME = 'emergencekey-name:';
   const PIN_UNLOCK = 0x30, PIN_SET = 0x31, PIN_CLEAR = 0x32;
   const CMD_HANGUP = 0x33;
   const HANGUP_WAIT_MS = 80;
@@ -883,6 +887,7 @@
   };
 
   let device = null, characteristic = null, statusChar = null, connected = false;
+  let stickName = '';
   let hidReady = false, pinBusy = false, pinMode = '';
   let pinLast = null, pinCooldownTimer = 0;
   const pinWaiters = [];
@@ -935,7 +940,7 @@
     } else if (connected) {
       btnConn.title = 'Tap to disconnect. Hold / right-click to scan all.';
     } else if (state === 'connecting') {
-      devName.textContent = '';
+      devName.textContent = stickName || '';
       btnConn.title = 'Connecting…';
     } else {
       devName.textContent = 'tap to connect';
@@ -1077,12 +1082,12 @@
     hidReady = false;
     pinBusy = false;
     pinWaiters.length = 0;
+    stickName = '';
     dropPinChar();
     hidePinOverlay();
     characteristic = null;
     queue.length = 0;
     setStatus('disconnected', 'disconnected — link dropped');
-    devName.textContent = '';
     refreshReconnect();
     if (capturing) exitCapture();
   }
@@ -1189,9 +1194,41 @@
     } catch (_) {}
   }
 
+  function bleLabel(name) {
+    const s = (name || '').replace(/\0+$/g, '').trim();
+    if (!s || /^unknown or unsupported device/i.test(s)) return '';
+    return s;
+  }
+  function nameKey(id) { return STORE_NAME + id; }
+  function loadSavedName(id) {
+    try { return (id && localStorage.getItem(nameKey(id))) || ''; } catch (_) { return ''; }
+  }
+  function rememberName(id, name) {
+    try {
+      if (id && name) localStorage.setItem(nameKey(id), name);
+    } catch (_) {}
+  }
+  async function readGapName(server) {
+    try {
+      const svc = await server.getPrimaryService(GAP_ACCESS);
+      const ch = await svc.getCharacteristic(GAP_NAME);
+      return bleLabel(new TextDecoder().decode(await ch.readValue()));
+    } catch (_) {
+      return '';
+    }
+  }
+  function resolveStickName(dev, gapName) {
+    const id = (dev && dev.id) || '';
+    const fromGap = bleLabel(gapName);
+    const fromBle = bleLabel(dev && dev.name);
+    const name = fromGap || fromBle || loadSavedName(id) || 'EmergenceKey';
+    if (id && (fromGap || fromBle)) rememberName(id, name);
+    return name;
+  }
+
   function applyLinkStatus() {
     if (!connected) return;
-    devName.textContent = (device && device.name) || 'EmergenceKey';
+    devName.textContent = stickName || bleLabel(device && device.name) || 'EmergenceKey';
     if (!statusChar) {
       setStatus('connected', 'connected — this firmware has no PIN');
       return;
@@ -1616,10 +1653,15 @@
   });
 
   async function gattConnect(dev) {
-    setStatus('connecting');
     bindDevice(dev);
+    stickName = bleLabel(dev.name) || loadSavedName(dev.id) || '';
+    setStatus('connecting');
     const server = await dev.gatt.connect();
-    const service = await server.getPrimaryService(SERVICE);
+    const [service, gapName] = await Promise.all([
+      server.getPrimaryService(SERVICE),
+      readGapName(server),
+    ]);
+    stickName = resolveStickName(dev, gapName);
     characteristic = await service.getCharacteristic(WRITE);
     connected = true;
     hidReady = false;
@@ -1648,8 +1690,8 @@
     try {
       setStatus('connecting');
       const opts = scanAll
-        ? { acceptAllDevices: true, optionalServices: [SERVICE] }
-        : { filters: [{ services: [SERVICE] }] };
+        ? { acceptAllDevices: true, optionalServices: OPTIONAL_SERVICES }
+        : { filters: [{ services: [SERVICE] }], optionalServices: OPTIONAL_SERVICES };
       const dev = await api.requestDevice(opts);
       await gattConnect(dev);
     } catch (err) {
