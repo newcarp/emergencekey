@@ -678,6 +678,14 @@
     .pin-card .pin-actions .btn { min-height: 48px; font-size: 16px; }
     @media (min-width: 560px) {
       .pin-overlay, .settings-overlay { align-items: center; }
+      .settings-card {
+        width: min(560px, 100%);
+        max-height: min(80dvh, 760px);
+        overflow: auto;
+        padding: 20px 20px 16px;
+        gap: 12px;
+      }
+      .settings-card .pin-title { font-size: 18px; }
     }
     @media (min-height: 820px) {
       .key { min-height: 40px; font-size: 14px; }
