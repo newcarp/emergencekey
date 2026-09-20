@@ -985,6 +985,9 @@
   let hidReady = false, pinBusy = false, pinMode = '';
   let pinLast = null, pinCooldownTimer = 0;
   const pinWaiters = [];
+  const pinSavedIds = new Set();
+  let pinDbPromise = null;
+  let wrapKeyPromise = null;
   let stickyMod = 0;
   const queue = [];
   let pumping = false;
@@ -1165,11 +1168,13 @@
     try { localStorage.setItem(STORE_SENS, String(mouseSens)); } catch (_) {}
   });
   loadSens();
-  syncSettingsPin();
-  syncAutoToggle();
-  syncAwakeToggle();
-  migrateStickList();
-  lastStickName = loadSavedName(currentDeviceId());
+  try {
+    syncSettingsPin();
+    syncAutoToggle();
+    syncAwakeToggle();
+    migrateStickList();
+    lastStickName = loadSavedName(currentDeviceId());
+  } catch (_) {}
 
   function sendMove(dx, dy) {
     moveAccX += dx * mouseSens;
@@ -1340,12 +1345,9 @@
   const PIN_DB_STORE = 'vault';
   const PIN_WRAP_KEY = 'wrap-key';
   function pinVaultKey(id) { return 'pin:' + id; }
-  const pinSavedIds = new Set();
-  let pinDbPromise = null;
-  let wrapKeyPromise = null;
 
   function pinCryptoOk() {
-    return !!(globalThis.crypto && crypto.subtle && globalThis.indexedDB);
+    return !!(typeof crypto !== 'undefined' && crypto.subtle && typeof indexedDB !== 'undefined');
   }
   function openPinDb() {
     if (!pinCryptoOk()) return Promise.reject(new Error('no vault'));
@@ -1388,7 +1390,7 @@
     if (!wrapKeyPromise) {
       wrapKeyPromise = (async () => {
         const existing = await idbOp('readonly', (s) => s.get(PIN_WRAP_KEY));
-        if (existing instanceof CryptoKey) return existing;
+        if (typeof CryptoKey !== 'undefined' && existing instanceof CryptoKey) return existing;
         const key = await crypto.subtle.generateKey(
           { name: 'AES-GCM', length: 256 },
           false,
