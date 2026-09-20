@@ -991,7 +991,8 @@
   let autoStableTimer = 0;
   let wakeLock = null;
   let hidReady = false, pinBusy = false, pinMode = '';
-  let pinLast = null, pinCooldownTimer = 0;
+  let pinLast = null, pinCooldownTimer = 0, pinCooldownUntil = 0;
+  let pinCooldownSettling = false;
   const pinWaiters = [];
   const pinSavedIds = new Set();
   let pinDbPromise = null;
@@ -1564,7 +1565,7 @@
   }
 
   function dropPinChar() {
-    if (pinCooldownTimer) { clearInterval(pinCooldownTimer); pinCooldownTimer = 0; }
+    stopCooldownTick();
     if (statusChar) {
       try { statusChar.removeEventListener('characteristicvaluechanged', onPinNotify); } catch (_) {}
       try { statusChar.stopNotifications(); } catch (_) {}
@@ -1680,7 +1681,8 @@
       return;
     }
     if (pinLast && pinLast.state === PIN_ST.COOLDOWN) {
-      setStatus('locked', 'locked out — wait ' + pinLast.info + 's');
+      const sec = cooldownLeftSec();
+      setStatus('locked', sec ? ('locked out — wait ' + sec + 's') : 'locked out — wait…');
     } else if (pinLast && pinLast.result === PIN_NOSLOT) {
       setStatus('locked', 'EmergenceKey cannot track this link — reconnect');
     } else {
@@ -1753,6 +1755,7 @@
     }
     hidReady = st.state === PIN_ST.NONE || st.state === PIN_ST.UNLOCKED;
     if (st.result === PIN_NOSLOT) hidReady = false;
+    armCooldownClock(st);
     syncSettingsPin();
     if (connected) applyLinkStatus();
     if (hidReady && (pinMode === 'unlock' || pinMode === 'cooldown')) hidePinOverlay();
@@ -1884,7 +1887,6 @@
     pinErr.textContent = '';
     pinInput.value = '';
     pinInput2.value = '';
-    if (pinCooldownTimer) { clearInterval(pinCooldownTimer); pinCooldownTimer = 0; }
   }
 
   function showPinOverlay(mode) {
@@ -1899,7 +1901,6 @@
     pinAlt.hidden = true;
     pinCancel.textContent = 'Not now';
     pinOk.classList.remove('danger');
-    if (pinCooldownTimer) { clearInterval(pinCooldownTimer); pinCooldownTimer = 0; }
 
     if (mode === 'unlock') {
       pinTitle.textContent = 'Unlock';
@@ -1946,25 +1947,63 @@
     if (!pinFieldWrap.hidden) setTimeout(() => pinInput.focus(), 50);
   }
 
-  function startCooldownTick() {
-    const tick = () => {
-      const sec = pinLast ? pinLast.info : 0;
+  function cooldownLeftSec() {
+    if (!pinCooldownUntil) return 0;
+    return Math.max(0, Math.ceil((pinCooldownUntil - Date.now()) / 1000));
+  }
+
+  function stopCooldownTick() {
+    pinCooldownUntil = 0;
+    pinCooldownSettling = false;
+    if (pinCooldownTimer) { clearInterval(pinCooldownTimer); pinCooldownTimer = 0; }
+  }
+
+  function armCooldownClock(st) {
+    if (!st || st.state !== PIN_ST.COOLDOWN) {
+      stopCooldownTick();
+      return;
+    }
+    const left = st.info || 0;
+    const localLeft = cooldownLeftSec();
+    if (!pinCooldownUntil || left < localLeft || (localLeft === 0 && left > 0)) {
+      pinCooldownUntil = Date.now() + left * 1000;
+    }
+    startCooldownTick();
+  }
+
+  function paintCooldown() {
+    const sec = cooldownLeftSec();
+    if (pinMode === 'cooldown') {
       pinMsg.textContent = sec
         ? 'Too many wrong tries. Wait ' + sec + 's, then unlock.'
         : 'Cooldown should be over. Close and unlock.';
-      applyLinkStatus();
-    };
-    tick();
-    pinCooldownTimer = setInterval(async () => {
+    }
+    applyLinkStatus();
+  }
+
+  async function settleCooldown() {
+    if (pinCooldownSettling || pinBusy) return;
+    pinCooldownSettling = true;
+    try {
       const st = await readPinStatus();
-      if (!st || st.state !== PIN_ST.COOLDOWN) {
-        if (pinCooldownTimer) { clearInterval(pinCooldownTimer); pinCooldownTimer = 0; }
-        if (st && st.state === PIN_ST.LOCKED) showPinOverlay('unlock');
-        else if (st && (st.state === PIN_ST.UNLOCKED || st.state === PIN_ST.NONE)) hidePinOverlay();
-        return;
+      if (st && st.state === PIN_ST.LOCKED && pinMode === 'cooldown') showPinOverlay('unlock');
+      else if (st && (st.state === PIN_ST.UNLOCKED || st.state === PIN_ST.NONE) && pinMode === 'cooldown') {
+        hidePinOverlay();
+      } else if (st && st.state === PIN_ST.COOLDOWN && cooldownLeftSec() <= 0) {
+        pinCooldownUntil = Date.now() + 1000;
       }
-      tick();
-    }, 1000);
+    } finally {
+      pinCooldownSettling = false;
+    }
+  }
+
+  function startCooldownTick() {
+    paintCooldown();
+    if (pinCooldownTimer) return;
+    pinCooldownTimer = setInterval(() => {
+      paintCooldown();
+      if (cooldownLeftSec() <= 0) settleCooldown();
+    }, 250);
   }
 
   function pinResultError(st) {
