@@ -609,7 +609,12 @@
       flex-direction: column;
       gap: 8px;
     }
-    .stick-list[hidden] { display: none !important; }
+    .stick-list[hidden], #keepAwakeWrap[hidden] { display: none !important; }
+    #keepAwakeWrap {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
     .stick-row {
       display: flex;
       align-items: stretch;
@@ -695,7 +700,7 @@
           <path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.15 7.15 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.59.24-1.13.55-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.81 8.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.93 14.1a.5.5 0 0 0-.12.64l1.92 3.32c.13.23.4.32.64.22l2.39-.96c.5.39 1.04.7 1.63.94l.36 2.54c.05.24.25.42.49.42h3.8c.24 0 .44-.18.49-.42l.36-2.54c.59-.24 1.13-.55 1.63-.94l2.39.96c.24.1.51 0 .64-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/>
         </svg>
       </button>
-      <button type="button" class="status" id="btnConn" title="Tap to pick a stick. Hold / right-click to scan all.">
+      <button type="button" class="status" id="btnConn" title="Tap to pick an EmergenceKey. Hold / right-click to scan all.">
         <span class="dot" id="dot"></span>
         <div class="status-copy">
           <div id="statusText">disconnected</div>
@@ -878,7 +883,7 @@
       </section>
       <section class="set-block">
         <h3>PIN</h3>
-        <p class="set-hint" id="setPinMsg">Connect to manage the stick PIN.</p>
+        <p class="set-hint" id="setPinMsg">Connect to manage the EmergenceKey PIN.</p>
         <div class="pin-actions">
           <button type="button" class="btn primary" id="setPinAction" hidden>Set PIN</button>
           <button type="button" class="btn" id="setPinForget" hidden>Forget saved PIN</button>
@@ -890,9 +895,16 @@
           <span>Auto-reconnect</span>
           <input type="checkbox" id="autoReconn" role="switch" checked>
         </label>
-        <p class="set-hint">After the screen locks or the link drops, reconnect to the last stick. Does not run when you first open the page. Stops if the stick is off.</p>
+        <p class="set-hint">After the screen locks or the link drops, reconnect to the last EmergenceKey. Does not run when you first open the page. Stops if the EmergenceKey is off.</p>
+        <div id="keepAwakeWrap" hidden>
+          <label class="set-toggle" for="keepAwake">
+            <span>Keep screen on</span>
+            <input type="checkbox" id="keepAwake" role="switch">
+          </label>
+          <p class="set-hint">Stops the phone from sleeping while an EmergenceKey is connected, so the Bluetooth link stays up. Uses more battery. You can still lock with the power button.</p>
+        </div>
         <div id="setSticks" class="stick-list" hidden></div>
-        <p class="set-hint" id="setSticksHint">Sticks you connect show up here.</p>
+        <p class="set-hint" id="setSticksHint">EmergenceKeys you connect show up here.</p>
         <p class="set-hint">If Connect does nothing or the light stays yellow, pair EmergenceKey in your OS Bluetooth settings, then come back and tap the status.</p>
         <div class="pin-actions">
           <button type="button" class="btn" id="setScan">Scan all devices</button>
@@ -923,6 +935,7 @@
   const STORE_PIN_SKIP = 'emergencekey-pin-skip:';
   const STORE_NAME = 'emergencekey-name:';
   const STORE_AUTO = 'emergencekey-auto-reconnect';
+  const STORE_AWAKE = 'emergencekey-keep-awake';
   const STORE_STICKS = 'emergencekey-sticks';
   const AUTO_MAX = 4;
   const AUTO_BACKOFF_MS = [400, 1500, 4000, 10000];
@@ -949,6 +962,7 @@
   const setOverlay = $('setOverlay'), setPinMsg = $('setPinMsg');
   const setPinAction = $('setPinAction'), setPinForget = $('setPinForget');
   const setScan = $('setScan'), setClose = $('setClose'), autoReconn = $('autoReconn');
+  const keepAwake = $('keepAwake'), keepAwakeWrap = $('keepAwakeWrap');
   const setSticks = $('setSticks'), setSticksHint = $('setSticksHint');
   const sensEl = $('sens'), sensVal = $('sensVal');
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -967,6 +981,7 @@
   let lastStickName = '';
   let wantAuto = false, autoBusy = false, autoTimer = 0, autoAttempts = 0, autoGen = 0;
   let autoStableTimer = 0;
+  let wakeLock = null;
   let hidReady = false, pinBusy = false, pinMode = '';
   let pinLast = null, pinCooldownTimer = 0;
   const pinWaiters = [];
@@ -1020,7 +1035,7 @@
       btnConn.title = 'Tap to disconnect. Hold / right-click to scan all.';
     } else if (state === 'connecting' && autoBusy) {
       devName.textContent = lastKnownName() || '';
-      btnConn.title = 'Reconnecting. Tap to pick another stick.';
+      btnConn.title = 'Reconnecting. Tap to pick another EmergenceKey.';
     } else if (state === 'connecting') {
       devName.textContent = lastKnownName() || '';
       btnConn.title = 'Connecting…';
@@ -1031,7 +1046,7 @@
       } else {
         devName.textContent = 'tap to connect';
       }
-      btnConn.title = 'Tap to pick a stick. Hold / right-click to scan all.';
+      btnConn.title = 'Tap to pick an EmergenceKey. Hold / right-click to scan all.';
     }
   }
 
@@ -1152,6 +1167,7 @@
   loadSens();
   syncSettingsPin();
   syncAutoToggle();
+  syncAwakeToggle();
   migrateStickList();
   lastStickName = loadSavedName(currentDeviceId());
 
@@ -1175,6 +1191,42 @@
   }
   function saveAutoEnabled(on) {
     try { localStorage.setItem(STORE_AUTO, on ? '1' : '0'); } catch (_) {}
+  }
+  function canWakeLock() {
+    return !!(navigator.wakeLock && typeof navigator.wakeLock.request === 'function');
+  }
+  function awakeEnabled() {
+    try { return localStorage.getItem(STORE_AWAKE) === '1'; } catch (_) { return false; }
+  }
+  function saveAwakeEnabled(on) {
+    try { localStorage.setItem(STORE_AWAKE, on ? '1' : '0'); } catch (_) {}
+  }
+  function syncAwakeToggle() {
+    const supported = canWakeLock();
+    keepAwakeWrap.hidden = !supported;
+    const on = supported && awakeEnabled();
+    keepAwake.checked = on;
+    keepAwake.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+  async function releaseWakeLock() {
+    const lock = wakeLock;
+    wakeLock = null;
+    if (!lock) return;
+    try { await lock.release(); } catch (_) {}
+  }
+  async function syncWakeLock() {
+    const want = canWakeLock() && awakeEnabled() && connected && pageVisible();
+    if (!want) {
+      await releaseWakeLock();
+      return;
+    }
+    if (wakeLock) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } catch (_) {
+      wakeLock = null;
+    }
   }
   function lastKnownName() {
     return stickName || lastStickName || loadSavedName(currentDeviceId());
@@ -1239,6 +1291,7 @@
     setStatus('disconnected', 'disconnected — tap to retry');
   }
   function onPageAwake() {
+    syncWakeLock();
     if (!autoEnabled() || !wantAuto || connected) return;
     autoAttempts = 0;
     scheduleAutoReconnect();
@@ -1261,6 +1314,7 @@
     hidePinOverlay();
     characteristic = null;
     queue.length = 0;
+    syncWakeLock();
     const retry = autoEnabled() && wantAuto;
     setStatus('disconnected', retry ? 'disconnected — reconnecting…' : 'disconnected — link dropped');
     refreshReconnect();
@@ -1318,7 +1372,7 @@
     return out;
   }
 
-  // Ask the stick to drop this ACL, then fall back to gatt.disconnect().
+  // Ask the EmergenceKey to drop this ACL, then fall back to gatt.disconnect().
   // Linux/BlueZ leaves paired links up after a browser-only disconnect.
   // Do not call from gattserverdisconnected — that is already too late.
   // Tab close cannot reliably get this write through.
@@ -1458,7 +1512,7 @@
     if (pinLast && pinLast.state === PIN_ST.COOLDOWN) {
       setStatus('locked', 'locked out — wait ' + pinLast.info + 's');
     } else if (pinLast && pinLast.result === PIN_NOSLOT) {
-      setStatus('locked', 'stick cannot track this link — reconnect');
+      setStatus('locked', 'EmergenceKey cannot track this link — reconnect');
     } else {
       setStatus('locked', 'locked — enter PIN');
     }
@@ -1481,6 +1535,7 @@
     hidePinOverlay();
     syncSettingsPin();
     syncAutoToggle();
+    syncAwakeToggle();
     refreshStickList();
     setOverlay.classList.add('show');
     btnSettings.classList.add('on');
@@ -1489,7 +1544,7 @@
   function syncSettingsPin() {
     setPinForget.hidden = !hasSavedPin();
     if (!connected) {
-      setPinMsg.textContent = 'Connect to manage the stick PIN.';
+      setPinMsg.textContent = 'Connect to manage the EmergenceKey PIN.';
       setPinAction.hidden = true;
       return;
     }
@@ -1508,7 +1563,7 @@
       setPinAction.hidden = false;
       setPinAction.textContent = 'Unlock';
     } else if (st === PIN_ST.LOCKED) {
-      setPinMsg.textContent = 'This stick has a PIN. Unlock to type.';
+      setPinMsg.textContent = 'This EmergenceKey has a PIN. Unlock to type.';
       setPinAction.hidden = false;
       setPinAction.textContent = 'Unlock';
     } else {
@@ -1677,7 +1732,7 @@
 
     if (mode === 'unlock') {
       pinTitle.textContent = 'Unlock';
-      pinMsg.textContent = 'This stick has a PIN. Enter it to type.';
+      pinMsg.textContent = 'This EmergenceKey has a PIN. Enter it to type.';
       pinFieldWrap.hidden = false;
       pinOk.textContent = 'Unlock';
     } else if (mode === 'enroll') {
@@ -1711,7 +1766,7 @@
       startCooldownTick();
     } else if (mode === 'noslot') {
       pinTitle.textContent = 'Reconnect';
-      pinMsg.textContent = 'The stick accepted the link but cannot track it. Disconnect and connect again.';
+      pinMsg.textContent = 'The EmergenceKey accepted the link but cannot track it. Disconnect and connect again.';
       pinOk.hidden = true;
       pinCancel.textContent = 'Close';
     }
@@ -1742,17 +1797,17 @@
   }
 
   function pinResultError(st) {
-    if (!st) return 'no reply from stick';
+    if (!st) return 'no reply from EmergenceKey';
     if (st.result === PIN_WRONG) {
       const left = st.info;
       return left ? ('Wrong PIN — ' + left + ' tries left') : 'Wrong PIN';
     }
     if (st.result === PIN_BAD) return 'Use 4–8 digits';
     if (st.result === PIN_DENIED) return 'Unlock first';
-    if (st.result === PIN_FLASH) return 'Stick could not save — try again';
+    if (st.result === PIN_FLASH) return 'EmergenceKey could not save — try again';
     if (st.result === PIN_COOL) return 'Wait, then try again';
-    if (st.result === PIN_NOSLOT) return 'Stick cannot track this link — reconnect';
-    if (st.result === PIN_BUSY) return 'Stick busy — try again';
+    if (st.result === PIN_NOSLOT) return 'EmergenceKey cannot track this link — reconnect';
+    if (st.result === PIN_BUSY) return 'EmergenceKey busy — try again';
     return '';
   }
 
@@ -1871,6 +1926,12 @@
       scheduleAutoReconnect();
     }
   });
+  keepAwake.addEventListener('change', () => {
+    const on = keepAwake.checked;
+    saveAwakeEnabled(on);
+    keepAwake.setAttribute('aria-checked', on ? 'true' : 'false');
+    syncWakeLock();
+  });
   function digitsOnly(el) {
     el.addEventListener('input', () => {
       el.value = el.value.replace(/\D/g, '').slice(0, 8);
@@ -1904,6 +1965,7 @@
     wantAuto = true;
     cancelAutoReconnect();
     markAutoStable();
+    syncWakeLock();
     try {
       await attachPin(service, dev);
     } catch (_) {
@@ -2004,11 +2066,11 @@
       if (name && (show || (wantAuto && autoEnabled()))) {
         devName.textContent = name;
         btnConn.title = wantAuto && autoEnabled()
-          ? 'Reconnecting. Tap to pick another stick.'
-          : 'Tap to pick a stick. Hold / right-click to scan all.';
+          ? 'Reconnecting. Tap to pick another EmergenceKey.'
+          : 'Tap to pick an EmergenceKey. Hold / right-click to scan all.';
       } else {
         devName.textContent = 'tap to connect';
-        btnConn.title = 'Tap to pick a stick. Hold / right-click to scan all.';
+        btnConn.title = 'Tap to pick an EmergenceKey. Hold / right-click to scan all.';
       }
     }
   }
@@ -2040,11 +2102,11 @@
     setSticks.innerHTML = '';
     if (!rows.length) {
       setSticks.hidden = true;
-      setSticksHint.textContent = 'Sticks you connect show up here.';
+      setSticksHint.textContent = 'EmergenceKeys you connect show up here.';
       return;
     }
     setSticks.hidden = false;
-    setSticksHint.textContent = 'Tap a stick to connect. Forget only removes it from this list.';
+    setSticksHint.textContent = 'Tap an EmergenceKey to connect. Forget only removes it from this list.';
     for (const row of rows) {
       const wrap = document.createElement('div');
       wrap.className = 'stick-row';
@@ -2710,11 +2772,12 @@
   window.addEventListener('beacio:statechange', refreshBleBanner);
   setTimeout(refreshBleBanner, 300);
   setTimeout(refreshBleBanner, 1400);
-  btnConn.title = 'Tap to pick a stick. Hold / right-click to scan all.';
+  btnConn.title = 'Tap to pick an EmergenceKey. Hold / right-click to scan all.';
   // iOS: banner skipped above; still probe reconnect once BLE polyfill may be ready.
   if (ios) refreshReconnect();
   document.addEventListener('visibilitychange', () => {
     if (pageVisible()) onPageAwake();
+    else releaseWakeLock();
   });
   window.addEventListener('pageshow', onPageAwake);
 })();

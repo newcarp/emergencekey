@@ -39,11 +39,11 @@ If nothing happens after hitting Connect (or the light stays yellow), the OS has
 
 You should only have to go through the pairing step once. After that it should just work when you connect on the webpage.
 
-On Linux, tap **Disconnect** before you close the tab. Closing Chrome while still connected can leave the stick attached; another device will not see it until you unplug or run `bluetoothctl disconnect`. Windows, Mac, iPhone, and Android drop the link on their own.
+On Linux, tap **Disconnect** before you close the tab. Closing Chrome while still connected can leave the EmergenceKey attached; another device will not see it until you unplug or run `bluetoothctl disconnect`. Windows, Mac, iPhone, and Android drop the link on their own.
 
-Current [firmware](https://github.com/newcarp/emergencekey-firmware) can store an optional PIN on the stick. A fresh stick has none, so it types immediately and the page offers **Set PIN** (skip if you do not want one). After a PIN is stored, Connect unlocks that session — the browser remembers the code for silent reconnects. Wrong guesses lock that connection out; wait, or power-cycle the stick. Change or clear it from **PIN** once unlocked. Old firmware has no status characteristic; the page behaves as before.
+Current [firmware](https://github.com/newcarp/emergencekey-firmware) can store an optional PIN on the EmergenceKey. A fresh EmergenceKey has none, so it types immediately and the page offers **Set PIN** (skip if you do not want one). After a PIN is stored, Connect unlocks that session — the browser remembers the code for silent reconnects. Wrong guesses lock that connection out; wait, or power-cycle the EmergenceKey. Change or clear it from **PIN** once unlocked. Old firmware has no status characteristic; the page behaves as before.
 
-**Show media** and **Show F keys** fold those rows in. Media is play/pause, next/prev, stop, rewind, FF, mute, and volume (hold Vol± / Rew / FF to repeat). Media keys need a dongle flashed from current [firmware](https://github.com/newcarp/emergencekey-firmware). Older sticks ignore them; the rest of the page still works.
+**Show media** and **Show F keys** fold those rows in. Media is play/pause, next/prev, stop, rewind, FF, mute, and volume (hold Vol± / Rew / FF to repeat). Media keys need an EmergenceKey flashed from current [firmware](https://github.com/newcarp/emergencekey-firmware). Older EmergenceKeys ignore them; the rest of the page still works.
 
 ## Self Hosting Quick start
 
