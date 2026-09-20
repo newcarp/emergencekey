@@ -604,6 +604,28 @@
       transform: translateX(20px);
       background: var(--accent);
     }
+    .stick-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .stick-list[hidden] { display: none !important; }
+    .stick-row {
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+    }
+    .stick-row .btn.stick-go {
+      flex: 1;
+      min-width: 0;
+      justify-content: flex-start;
+      text-align: left;
+    }
+    .stick-row .btn.stick-forget {
+      flex: 0 0 auto;
+      min-width: 0;
+      padding: 0 12px;
+    }
     .visually-hidden {
       position: absolute;
       width: 1px;
@@ -673,7 +695,7 @@
           <path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.15 7.15 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.59.24-1.13.55-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.81 8.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.93 14.1a.5.5 0 0 0-.12.64l1.92 3.32c.13.23.4.32.64.22l2.39-.96c.5.39 1.04.7 1.63.94l.36 2.54c.05.24.25.42.49.42h3.8c.24 0 .44-.18.49-.42l.36-2.54c.59-.24 1.13-.55 1.63-.94l2.39.96c.24.1.51 0 .64-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/>
         </svg>
       </button>
-      <button type="button" class="status" id="btnConn" title="Tap to connect. Hold / right-click to scan all.">
+      <button type="button" class="status" id="btnConn" title="Tap to pick a stick. Hold / right-click to scan all.">
         <span class="dot" id="dot"></span>
         <div class="status-copy">
           <div id="statusText">disconnected</div>
@@ -868,7 +890,9 @@
           <span>Auto-reconnect</span>
           <input type="checkbox" id="autoReconn" role="switch" checked>
         </label>
-        <p class="set-hint">After the screen locks or the link drops, reconnect to the last stick. Does not scan. Stops if the stick is off.</p>
+        <p class="set-hint">After the screen locks or the link drops, reconnect to the last stick. Does not run when you first open the page. Stops if the stick is off.</p>
+        <div id="setSticks" class="stick-list" hidden></div>
+        <p class="set-hint" id="setSticksHint">Sticks you connect show up here.</p>
         <p class="set-hint">If Connect does nothing or the light stays yellow, pair EmergenceKey in your OS Bluetooth settings, then come back and tap the status.</p>
         <div class="pin-actions">
           <button type="button" class="btn" id="setScan">Scan all devices</button>
@@ -899,6 +923,7 @@
   const STORE_PIN_SKIP = 'emergencekey-pin-skip:';
   const STORE_NAME = 'emergencekey-name:';
   const STORE_AUTO = 'emergencekey-auto-reconnect';
+  const STORE_STICKS = 'emergencekey-sticks';
   const AUTO_MAX = 4;
   const AUTO_BACKOFF_MS = [400, 1500, 4000, 10000];
   const PIN_UNLOCK = 0x30, PIN_SET = 0x31, PIN_CLEAR = 0x32;
@@ -924,6 +949,7 @@
   const setOverlay = $('setOverlay'), setPinMsg = $('setPinMsg');
   const setPinAction = $('setPinAction'), setPinForget = $('setPinForget');
   const setScan = $('setScan'), setClose = $('setClose'), autoReconn = $('autoReconn');
+  const setSticks = $('setSticks'), setSticksHint = $('setSticksHint');
   const sensEl = $('sens'), sensVal = $('sensVal');
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
   document.documentElement.classList.toggle(
@@ -984,7 +1010,7 @@
       error: 'error',
     };
     statusText.textContent = detail || labels[state] || state;
-    btnConn.disabled = state === 'connecting';
+    btnConn.disabled = state === 'connecting' && !autoBusy;
     btnConn.classList.toggle('is-connected', connected);
     btnConn.classList.toggle('is-locked', state === 'locked');
     btnConn.classList.toggle('is-error', state === 'error');
@@ -992,6 +1018,9 @@
       btnConn.title = 'Tap to enter PIN. Hold / right-click to scan all.';
     } else if (connected) {
       btnConn.title = 'Tap to disconnect. Hold / right-click to scan all.';
+    } else if (state === 'connecting' && autoBusy) {
+      devName.textContent = lastKnownName() || '';
+      btnConn.title = 'Reconnecting. Tap to pick another stick.';
     } else if (state === 'connecting') {
       devName.textContent = lastKnownName() || '';
       btnConn.title = 'Connecting…';
@@ -1002,7 +1031,7 @@
       } else {
         devName.textContent = 'tap to connect';
       }
-      btnConn.title = 'Tap to connect. Hold / right-click to scan all.';
+      btnConn.title = 'Tap to pick a stick. Hold / right-click to scan all.';
     }
   }
 
@@ -1123,6 +1152,7 @@
   loadSens();
   syncSettingsPin();
   syncAutoToggle();
+  migrateStickList();
   lastStickName = loadSavedName(currentDeviceId());
 
   function sendMove(dx, dy) {
@@ -1209,19 +1239,8 @@
     setStatus('disconnected', 'disconnected — tap to retry');
   }
   function onPageAwake() {
-    if (!autoEnabled() || connected) return;
-    if (!wantAuto && !currentDeviceId() && !device) return;
-    if (!wantAuto && currentDeviceId()) wantAuto = true;
+    if (!autoEnabled() || !wantAuto || connected) return;
     autoAttempts = 0;
-    scheduleAutoReconnect();
-  }
-  function maybeStartAutoReconnect() {
-    if (!autoEnabled() || connected || autoBusy) return;
-    if (!device && !currentDeviceId()) return;
-    wantAuto = true;
-    if (!pageVisible()) return;
-    if (autoTimer) return;
-    if (autoAttempts >= AUTO_MAX) autoAttempts = 0;
     scheduleAutoReconnect();
   }
 
@@ -1257,6 +1276,7 @@
     device.removeEventListener('gattserverdisconnected', onDisconnected);
     device.addEventListener('gattserverdisconnected', onDisconnected);
     try { localStorage.setItem(STORE, device.id); } catch (_) {}
+    rememberStick(device.id);
   }
 
   function validPin(s) { return /^\d{4,8}$/.test(s || ''); }
@@ -1371,6 +1391,41 @@
       if (id && name) localStorage.setItem(nameKey(id), name);
     } catch (_) {}
   }
+  function loadStickIds() {
+    try {
+      const raw = localStorage.getItem(STORE_STICKS);
+      const arr = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(arr)) {
+        return arr.filter((id) => typeof id === 'string' && id);
+      }
+    } catch (_) {}
+    return [];
+  }
+  function saveStickIds(ids) {
+    try { localStorage.setItem(STORE_STICKS, JSON.stringify(ids.slice(0, 12))); } catch (_) {}
+  }
+  function rememberStick(id) {
+    if (!id) return;
+    const ids = loadStickIds().filter((x) => x !== id);
+    ids.unshift(id);
+    saveStickIds(ids);
+  }
+  function forgetStick(id) {
+    if (!id) return;
+    saveStickIds(loadStickIds().filter((x) => x !== id));
+    try {
+      if (localStorage.getItem(STORE) === id) {
+        const next = loadStickIds()[0] || '';
+        if (next) localStorage.setItem(STORE, next);
+        else localStorage.removeItem(STORE);
+      }
+    } catch (_) {}
+    if (!device || device.id === id) lastStickName = loadSavedName(currentDeviceId()) || '';
+  }
+  function migrateStickList() {
+    const last = currentDeviceId();
+    if (last) rememberStick(last);
+  }
   async function readGapName(server) {
     try {
       const svc = await server.getPrimaryService(GAP_ACCESS);
@@ -1426,6 +1481,7 @@
     hidePinOverlay();
     syncSettingsPin();
     syncAutoToggle();
+    refreshStickList();
     setOverlay.classList.add('show');
     btnSettings.classList.add('on');
     btnSettings.setAttribute('aria-expanded', 'true');
@@ -1810,8 +1866,7 @@
       if (!connected) setStatus('disconnected');
       return;
     }
-    if (!connected && (device || currentDeviceId())) {
-      wantAuto = true;
+    if (!connected && wantAuto) {
       autoAttempts = 0;
       scheduleAutoReconnect();
     }
@@ -1856,10 +1911,12 @@
     }
     if (!connected || !device || !device.gatt || !device.gatt.connected) return;
     applyLinkStatus();
+    if (setOverlay.classList.contains('show')) refreshStickList();
   }
 
   async function connect(scanAll) {
     cancelAutoReconnect();
+    wantAuto = false;
     const api = ble();
     if (!api || typeof api.requestDevice !== 'function') {
       setStatus('error', ios ? 'enable beacio: aA → Extensions' : 'no Web Bluetooth');
@@ -1890,7 +1947,6 @@
       } else {
         setStatus('error', (err && err.message) || 'connect failed');
       }
-      if (wantAuto && autoEnabled()) scheduleAutoReconnect();
     }
   }
 
@@ -1898,7 +1954,7 @@
     const api = ble();
     if (!api) return false;
     const name = lastKnownName();
-    setStatus('connecting', name ? 'reconnecting…' : 'connecting…');
+    setStatus('connecting', 'reconnecting… · tap for another');
     if (name) devName.textContent = name;
     try {
       let dev = (device && device.gatt) ? device : null;
@@ -1917,13 +1973,13 @@
   }
 
   async function linkUp() {
+    const picking = autoBusy || !!autoTimer;
     cancelAutoReconnect();
+    if (picking) wantAuto = false;
     if (connected && device) {
       await connect(false);
       return;
     }
-    if (canReconnect && await reconnect()) return;
-    if (device && device.gatt && await reconnect()) return;
     await connect(false);
   }
 
@@ -1948,13 +2004,98 @@
       if (name && (show || (wantAuto && autoEnabled()))) {
         devName.textContent = name;
         btnConn.title = wantAuto && autoEnabled()
-          ? 'Auto-reconnect on. Tap to connect now. Hold / right-click to scan all.'
-          : 'Tap to connect. Hold / right-click to scan all.';
+          ? 'Reconnecting. Tap to pick another stick.'
+          : 'Tap to pick a stick. Hold / right-click to scan all.';
       } else {
         devName.textContent = 'tap to connect';
-        btnConn.title = 'Tap to connect. Hold / right-click to scan all.';
+        btnConn.title = 'Tap to pick a stick. Hold / right-click to scan all.';
       }
     }
+  }
+
+  async function grantedDevices() {
+    const api = ble();
+    if (!api || typeof api.getDevices !== 'function') return [];
+    try { return await api.getDevices(); } catch (_) { return []; }
+  }
+  async function refreshStickList() {
+    const ids = loadStickIds();
+    const granted = await grantedDevices();
+    const byId = new Map(granted.map((d) => [d.id, d]));
+    const rows = [];
+    const seen = new Set();
+    const lastId = currentDeviceId();
+    for (const id of ids) {
+      seen.add(id);
+      const dev = byId.get(id);
+      const name = loadSavedName(id) || bleLabel(dev && dev.name) || 'EmergenceKey';
+      rows.push({ id, name, dev, last: id === lastId });
+    }
+    for (const d of granted) {
+      if (seen.has(d.id)) continue;
+      const name = loadSavedName(d.id) || bleLabel(d.name);
+      if (!name) continue;
+      rows.push({ id: d.id, name, dev: d, last: d.id === lastId });
+    }
+    setSticks.innerHTML = '';
+    if (!rows.length) {
+      setSticks.hidden = true;
+      setSticksHint.textContent = 'Sticks you connect show up here.';
+      return;
+    }
+    setSticks.hidden = false;
+    setSticksHint.textContent = 'Tap a stick to connect. Forget only removes it from this list.';
+    for (const row of rows) {
+      const wrap = document.createElement('div');
+      wrap.className = 'stick-row';
+      const go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'btn stick-go';
+      const here = !!(connected && device && device.id === row.id);
+      if (here) {
+        go.classList.add('on');
+        go.textContent = row.name + ' · connected';
+        go.disabled = true;
+      } else {
+        go.textContent = row.name + (row.last ? ' · last' : '');
+      }
+      go.addEventListener('click', () => connectSavedStick(row));
+      const forget = document.createElement('button');
+      forget.type = 'button';
+      forget.className = 'btn stick-forget';
+      forget.textContent = 'Forget';
+      forget.addEventListener('click', () => {
+        forgetStick(row.id);
+        refreshStickList();
+        if (!connected) setStatus('disconnected');
+      });
+      wrap.append(go, forget);
+      setSticks.append(wrap);
+    }
+  }
+  async function connectSavedStick(row) {
+    hideSettings();
+    cancelAutoReconnect();
+    wantAuto = false;
+    if (connected && device && device.id === row.id) return;
+    if (connected && device) await hangupThenDisconnect();
+    let dev = (row.dev && row.dev.gatt) ? row.dev : null;
+    if (!dev) {
+      const list = await grantedDevices();
+      dev = list.find((d) => d.id === row.id) || null;
+    }
+    if (dev && dev.gatt) {
+      try {
+        setStatus('connecting');
+        await gattConnect(dev);
+        return;
+      } catch (_) {
+        setStatus('error', 'could not reach ' + row.name);
+        return;
+      }
+    }
+    setStatus('disconnected', 'scan to add ' + row.name);
+    connect(false);
   }
 
   function fitTextBox() {
@@ -2557,7 +2698,6 @@
       unsupported.classList.remove('show');
       unsupported.textContent = '';
       refreshReconnect();
-      maybeStartAutoReconnect();
       return;
     }
     showBleHelp();
@@ -2570,14 +2710,13 @@
   window.addEventListener('beacio:statechange', refreshBleBanner);
   setTimeout(refreshBleBanner, 300);
   setTimeout(refreshBleBanner, 1400);
-  btnConn.title = 'Tap to connect. Hold / right-click to scan all.';
+  btnConn.title = 'Tap to pick a stick. Hold / right-click to scan all.';
   // iOS: banner skipped above; still probe reconnect once BLE polyfill may be ready.
   if (ios) refreshReconnect();
   document.addEventListener('visibilitychange', () => {
     if (pageVisible()) onPageAwake();
   });
   window.addEventListener('pageshow', onPageAwake);
-  maybeStartAutoReconnect();
 })();
 </script>
 </body>
