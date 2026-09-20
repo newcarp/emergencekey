@@ -1336,15 +1336,173 @@
   function validPin(s) { return /^\d{4,8}$/.test(s || ''); }
   function pinKey(id) { return STORE_PIN + id; }
   function skipKey(id) { return STORE_PIN_SKIP + id; }
-  function loadSavedPin(id) {
+  const PIN_DB_NAME = 'emergencekey';
+  const PIN_DB_STORE = 'vault';
+  const PIN_WRAP_KEY = 'wrap-key';
+  function pinVaultKey(id) { return 'pin:' + id; }
+  const pinSavedIds = new Set();
+  let pinDbPromise = null;
+  let wrapKeyPromise = null;
+
+  function pinCryptoOk() {
+    return !!(globalThis.crypto && crypto.subtle && globalThis.indexedDB);
+  }
+  function openPinDb() {
+    if (!pinCryptoOk()) return Promise.reject(new Error('no vault'));
+    if (pinDbPromise) return pinDbPromise;
+    pinDbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(PIN_DB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(PIN_DB_STORE)) {
+          db.createObjectStore(PIN_DB_STORE);
+        }
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        db.onclose = () => { pinDbPromise = null; wrapKeyPromise = null; };
+        db.onversionchange = () => { db.close(); pinDbPromise = null; wrapKeyPromise = null; };
+        resolve(db);
+      };
+      req.onerror = () => {
+        pinDbPromise = null;
+        reject(req.error);
+      };
+    });
+    return pinDbPromise;
+  }
+  function idbOp(mode, fn) {
+    return openPinDb().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction(PIN_DB_STORE, mode);
+      const store = tx.objectStore(PIN_DB_STORE);
+      let req;
+      try { req = fn(store); } catch (err) { reject(err); return; }
+      let result;
+      req.onsuccess = () => { result = req.result; };
+      req.onerror = () => reject(req.error);
+      tx.oncomplete = () => resolve(result);
+      tx.onabort = () => reject(tx.error || new Error('idb abort'));
+    }));
+  }
+  function getWrapKey() {
+    if (!wrapKeyPromise) {
+      wrapKeyPromise = (async () => {
+        const existing = await idbOp('readonly', (s) => s.get(PIN_WRAP_KEY));
+        if (existing instanceof CryptoKey) return existing;
+        const key = await crypto.subtle.generateKey(
+          { name: 'AES-GCM', length: 256 },
+          false,
+          ['encrypt', 'decrypt']
+        );
+        await idbOp('readwrite', (s) => s.put(key, PIN_WRAP_KEY));
+        return key;
+      })().catch((err) => {
+        wrapKeyPromise = null;
+        throw err;
+      });
+    }
+    return wrapKeyPromise;
+  }
+  async function wrapPinDigits(pin) {
+    const key = await getWrapKey();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      new TextEncoder().encode(pin)
+    );
+    return { v: 1, iv: Array.from(iv), ct: Array.from(new Uint8Array(ct)) };
+  }
+  async function unwrapPinDigits(blob) {
+    if (!blob || blob.v !== 1 || !blob.iv || !blob.ct) return '';
+    const key = await getWrapKey();
+    const pt = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: new Uint8Array(blob.iv) },
+      key,
+      new Uint8Array(blob.ct)
+    );
+    return new TextDecoder().decode(pt);
+  }
+  function loadLegacyPin(id) {
     try { return localStorage.getItem(pinKey(id)) || ''; } catch (_) { return ''; }
   }
-  function rememberPin(id, pin) {
+  function dropLegacyPin(id) {
+    try { localStorage.removeItem(pinKey(id)); } catch (_) {}
+  }
+  async function dropWrappedPin(id) {
+    pinSavedIds.delete(id);
+    try { await idbOp('readwrite', (s) => s.delete(pinVaultKey(id))); } catch (_) {}
+  }
+  async function loadSavedPin(id) {
+    if (!id) return '';
     try {
-      if (pin) localStorage.setItem(pinKey(id), pin);
-      else localStorage.removeItem(pinKey(id));
+      const blob = await idbOp('readonly', (s) => s.get(pinVaultKey(id)));
+      if (blob) {
+        const pin = await unwrapPinDigits(blob);
+        if (validPin(pin)) {
+          pinSavedIds.add(id);
+          return pin;
+        }
+        await dropWrappedPin(id);
+      }
+    } catch (_) {}
+    const legacy = loadLegacyPin(id);
+    if (!validPin(legacy)) return '';
+    await rememberPin(id, legacy);
+    return pinSavedIds.has(id) ? legacy : '';
+  }
+  async function rememberPin(id, pin) {
+    if (!id) return;
+    if (!pin) {
+      pinSavedIds.delete(id);
+      dropLegacyPin(id);
+      await dropWrappedPin(id);
+      return;
+    }
+    if (!validPin(pin) || !pinCryptoOk()) return;
+    try {
+      const blob = await wrapPinDigits(pin);
+      await idbOp('readwrite', (s) => s.put(blob, pinVaultKey(id)));
+      pinSavedIds.add(id);
+      dropLegacyPin(id);
+    } catch (_) {
+      pinSavedIds.delete(id);
+    }
+  }
+  async function migrateLegacyPins() {
+    if (!pinCryptoOk()) return;
+    const ids = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(STORE_PIN)) ids.push(k.slice(STORE_PIN.length));
+      }
+    } catch (_) { return; }
+    for (const id of ids) {
+      if (!id) continue;
+      const pin = loadLegacyPin(id);
+      if (validPin(pin)) await rememberPin(id, pin);
+      else dropLegacyPin(id);
+    }
+  }
+  async function refreshPinSavedCache() {
+    pinSavedIds.clear();
+    if (!pinCryptoOk()) return;
+    try {
+      const keys = await idbOp('readonly', (s) => s.getAllKeys());
+      for (const k of keys || []) {
+        if (typeof k === 'string' && k.startsWith('pin:')) pinSavedIds.add(k.slice(4));
+      }
     } catch (_) {}
   }
+  async function hydratePinVault() {
+    try {
+      await migrateLegacyPins();
+      await refreshPinSavedCache();
+    } catch (_) {}
+    syncSettingsPin();
+  }
+  hydratePinVault();
   function loadPinSkip(id) {
     try { return localStorage.getItem(skipKey(id)) === '1'; } catch (_) { return false; }
   }
@@ -1464,7 +1622,7 @@
     ids.unshift(id);
     saveStickIds(ids);
   }
-  function forgetStick(id) {
+  async function forgetStick(id) {
     if (!id) return;
     saveStickIds(loadStickIds().filter((x) => x !== id));
     try {
@@ -1474,7 +1632,9 @@
         else localStorage.removeItem(STORE);
       }
     } catch (_) {}
+    await rememberPin(id, '');
     if (!device || device.id === id) lastStickName = loadSavedName(currentDeviceId()) || '';
+    syncSettingsPin();
   }
   function migrateStickList() {
     const last = currentDeviceId();
@@ -1524,7 +1684,8 @@
   }
   function hasSavedPin() {
     const id = currentDeviceId();
-    return !!(id && validPin(loadSavedPin(id)));
+    if (!id) return false;
+    return pinSavedIds.has(id) || validPin(loadLegacyPin(id));
   }
   function hideSettings() {
     setOverlay.classList.remove('show');
@@ -1693,11 +1854,11 @@
       return;
     }
     if (initial) {
-      const saved = loadSavedPin(dev.id);
+      const saved = await loadSavedPin(dev.id);
       if (validPin(saved)) {
         const next = await sendPinCmd(PIN_UNLOCK, saved);
         if (next && (next.state === PIN_ST.UNLOCKED || next.result === PIN_OK)) return;
-        if (next && next.result === PIN_WRONG) rememberPin(dev.id, '');
+        if (next && next.result === PIN_WRONG) await rememberPin(dev.id, '');
         if (next && next.state === PIN_ST.COOLDOWN) {
           showPinOverlay('cooldown');
           return;
@@ -1823,7 +1984,7 @@
       const st = await sendPinCmd(PIN_CLEAR, '');
       pinOk.disabled = false;
       if (st && (st.result === PIN_OK || st.state === PIN_ST.NONE)) {
-        if (id) rememberPin(id, '');
+        if (id) await rememberPin(id, '');
         hidePinOverlay();
         return;
       }
@@ -1839,7 +2000,7 @@
       const st = await sendPinCmd(PIN_UNLOCK, a);
       pinOk.disabled = false;
       if (st && (st.state === PIN_ST.UNLOCKED || st.result === PIN_OK)) {
-        if (id) rememberPin(id, a);
+        if (id) await rememberPin(id, a);
         hidePinOverlay();
         return;
       }
@@ -1859,7 +2020,7 @@
       pinOk.disabled = false;
       if (st && (st.result === PIN_OK || st.state === PIN_ST.UNLOCKED)) {
         if (id) {
-          rememberPin(id, a);
+          await rememberPin(id, a);
           savePinSkip(id, false);
         }
         hidePinOverlay();
@@ -1902,9 +2063,9 @@
     if (e.target === setOverlay) hideSettings();
   });
   setPinAction.addEventListener('click', openPinPanel);
-  setPinForget.addEventListener('click', () => {
+  setPinForget.addEventListener('click', async () => {
     const id = currentDeviceId();
-    if (id) rememberPin(id, '');
+    if (id) await rememberPin(id, '');
     syncSettingsPin();
   });
   setScan.addEventListener('click', async () => {
@@ -2106,7 +2267,7 @@
       return;
     }
     setSticks.hidden = false;
-    setSticksHint.textContent = 'Tap an EmergenceKey to connect. Forget only removes it from this list.';
+    setSticksHint.textContent = 'Tap an EmergenceKey to connect. Forget removes it from this list and drops a saved PIN for it.';
     for (const row of rows) {
       const wrap = document.createElement('div');
       wrap.className = 'stick-row';
@@ -2126,8 +2287,8 @@
       forget.type = 'button';
       forget.className = 'btn stick-forget';
       forget.textContent = 'Forget';
-      forget.addEventListener('click', () => {
-        forgetStick(row.id);
+      forget.addEventListener('click', async () => {
+        await forgetStick(row.id);
         refreshStickList();
         if (!connected) setStatus('disconnected');
       });

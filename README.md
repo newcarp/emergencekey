@@ -1,38 +1,57 @@
-# EmergenceKey
+EmergenceKey came about when I couldn't find the dongle for my Bluetooth keyboard, and remembered a few other times where I could have used an emergency keyboard. Hence EmergenceKey.
 
-I don't want to carry a keyboard.
+EmergenceKey combines cheap hardware and a self-hostable web interface that gives an on-screen keyboard, text sending, mouse control, media keys, and (on desktop) fullscreen keyboard-and-mouse capture so your phone or laptop can control a device just like a real keyboard/mouse.
 
-EmergenceKey is a web interface that gives on-screen keyboard, text sending, mouse control, and media keys so your phone or laptop can
-drive the target without packing a real keyboard or mouse.
+## What you need to get started
 
-This repo is the **phone / laptop web UI**. It is half of the project. The USB dongle firmware lives in [newcarp/emergencekey-firmware](https://github.com/newcarp/emergencekey-firmware).
+This is the web UI only; you also need the hardware component for it to connect to. For hardware I've used a [Waveshare ESP32-S3-Zero](https://www.waveshare.com/esp32-s3-zero.htm) that connects over BLE to the browser and presents as a USB HID device on the target.
 
-The dongle (a [Waveshare ESP32-S3-Zero](https://www.waveshare.com/esp32-s3-zero.htm)) talks BLE to the browser and presents as a real USB HID device on the target. No drivers or extra software on the target.
+The USB dongle firmware is available at [newcarp/emergencekey-firmware](https://github.com/newcarp/emergencekey-firmware). Flash that to the device and you're ready to connect via the web interface.
 
-Treat this as an emergency / same-room tool, not a general-purpose wireless keyboard. On some BIOS screens the chip will take keyboard but not mouse.
+There is no need to self-host; you can use EmergenceKey via [GitHub Pages](https://newcarp.github.io/emergencekey).
 
-## What you need
+Or host it yourself with a machine with a Bluetooth adapter that can run Python 3 + OpenSSL. Bluetooth needs a secure context, so `serve.py` serves the page over HTTPS with a local self-signed cert if needed.
 
-**Hardware (firmware repo)**
-
-- A Waveshare ESP32-S3-Zero flashed from [newcarp/emergencekey-firmware](https://github.com/newcarp/emergencekey-firmware) (flashing notes are there)
-- The dongle plugged into the target machine, advertising as `EmergenceKey`
-
-**This web interface**
-- Use this page live on github pages - https://newcarp.github.io/emergencekey
-- Or host it yourslf with a machine on the same LAN that can run Python 3 + OpenSSL. Bluetooth needs a secure context, so `serve.py` serves the page over HTTPS with a local self-signed cert if needed.
 - A browser with Web Bluetooth is required:
   - **Android / desktop:** Chrome or Edge
-  - **iPhone / iPad:** Safari with [Beacio](https://beacio.com) enabled (`aA` → Manage Extensions → allow Beacio)
+  - **iPhone / iPad:** Safari with [Beacio](https://beacio.com) enabled
 
-Firefox and stock Safari have no Web Bluetooth. Opening `index.html` as a file will not work.
+Firefox has no Web Bluetooth, so EmergenceKey will not function with it.
 
 ## Connecting
 
 1. Open the page and hit **Connect**.
-2. Pick **EmergenceKey** from the list.
+2. Pick **EmergenceKey** (or if you set a custom name, choose that) from the list.
 
-If nothing happens after hitting Connect (or the light stays yellow), the OS hasn't paired with the dongle yet. The page can't always summon the pairing dialog itself — on some OSes the browser can't raise the prompt, so you have to pair manually.
+Current [firmware](https://github.com/newcarp/emergencekey-firmware) can store an optional PIN on the EmergenceKey. A fresh EmergenceKey has none, so the page offers **Set a PIN**. You can skip this if you would rather not use one, but this lets anyone in range connect to the device when it's available for pairing, so it's strongly recommended to add one. If you skipped and want to add one later, or want to change or remove the PIN, you can do so through the settings menu.
+
+After a PIN is stored, connecting in the future unlocks automatically and the browser remembers the code so it can reconnect. Wrong guesses will lock the connection out. You can wait, or power cycle the EmergenceKey.
+
+## Features
+
+**Capture** (desktop Chrome/Edge) is the closest thing to plugging in a real keyboard and mouse. Hit **Capture** and the trackpad goes fullscreen, locks the pointer, and every key and mouse movement on this machine is sent to the target similar to a VM console. Press Esc to release. If the target itself needs Esc, use the on-screen Esc key before you capture, or after you release.
+
+The top bar also lets you show or hide the pieces you actually need:
+
+- **Trackpad** — move, click, two-finger scroll / right-click, and double-tap-hold to drag. Mouse speed is in Settings.
+- **Keys** — on-screen QWERTY, modifiers, arrows, and a text box. Type or paste, then **Send**. Enter in that box sends the text and a Return on the target. Hold **Fn** with the arrows for Home / End / Page Up / Page Down.
+- **Media keys** — play, pause, skip, rewind, fast forward, volume, and mute.
+- **F keys** — Esc and F1–F12.
+
+## Settings
+
+Open the gear in the top-left.
+
+- **Mouse speed** — how fast the trackpad moves the pointer (0.25×–4×).
+- **PIN** — set, change, or clear the PIN on the connected EmergenceKey. **Forget saved PIN** only drops the code this browser stored; it does not remove the PIN from the dongle.
+- **Auto-reconnect** — after the screen locks or the Bluetooth link drops, reconnect to the last EmergenceKey. It does not run when you first open the page, and it stops if the EmergenceKey is off.
+- **Keep screen on** — on phones that support it, stops the screen from sleeping while connected so the Bluetooth link stays up. Uses more battery. You can still lock with the power button.
+- **Previous devices** — EmergenceKeys you have connected show up here. Tap one to connect, or **Forget** to remove it from the list (that also drops a saved PIN for it).
+- **Scan all devices** — same as holding / right-clicking **Connect**: pick from every nearby Bluetooth device instead of only named EmergenceKeys.
+
+## Troubleshooting
+
+If nothing happens after hitting Connect (or the light on the device stays yellow), it's likely the OS hasn't paired with the dongle yet. The page can't always summon the pairing dialog itself, and on some OSes the browser can't raise the prompt, so you have to pair manually.
 
 - If a pairing prompt appears → tap through it once. After that, it reconnects silently.
 - If no prompt appears → pair EmergenceKey manually in your OS Bluetooth settings, then come back and hit **Connect** again.
@@ -41,17 +60,11 @@ You should only have to go through the pairing step once. After that it should j
 
 On Linux, tap **Disconnect** before you close the tab. Closing Chrome while still connected can leave the EmergenceKey attached; another device will not see it until you unplug or run `bluetoothctl disconnect`. Windows, Mac, iPhone, and Android drop the link on their own.
 
-Current [firmware](https://github.com/newcarp/emergencekey-firmware) can store an optional PIN on the EmergenceKey. A fresh EmergenceKey has none, so it types immediately and the page offers **Set PIN** (skip if you do not want one). After a PIN is stored, Connect unlocks that session — the browser remembers the code for silent reconnects. Wrong guesses lock that connection out; wait, or power-cycle the EmergenceKey. Change or clear it from **PIN** once unlocked. Old firmware has no status characteristic; the page behaves as before.
-
-**Show media** and **Show F keys** fold those rows in. Media is play/pause, next/prev, stop, rewind, FF, mute, and volume (hold Vol± / Rew / FF to repeat). Media keys need an EmergenceKey flashed from current [firmware](https://github.com/newcarp/emergencekey-firmware). Older EmergenceKeys ignore them; the rest of the page still works.
-
-## Self Hosting Quick start
+## Self-hosting quick start
 
 ```bash
 cp .env.example .env
-# Edit .env: set HOST to this machine's LAN IP (or hostname).
-# Optional: EXTRA_SANS for Tailscale / extra IPs.
-
+# Edit .env: set HOST to this machine's IP or hostname.
 python3 serve.py
 ```
 
@@ -62,7 +75,3 @@ Then open the HTTPS URL in a Web Bluetooth browser and follow [Connecting](#conn
 **Android / desktop:** Chrome or Edge. Open the HTTPS URL and continue past the self-signed warning. Installing the cert is optional.
 
 `.env` and generated certs under `.certs/` stay local (gitignored).
-
-## License
-
-MIT — see [LICENSE](LICENSE).
