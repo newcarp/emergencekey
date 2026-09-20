@@ -562,6 +562,48 @@
       color: var(--muted);
     }
     .set-hint { margin: 0; font-size: 13px; line-height: 1.4; color: var(--muted); }
+    .set-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 44px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .set-toggle input {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 48px;
+      height: 28px;
+      flex-shrink: 0;
+      margin: 0;
+      border-radius: 14px;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      position: relative;
+      cursor: pointer;
+    }
+    .set-toggle input::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: transform .15s ease, background .15s ease;
+    }
+    .set-toggle input:checked {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+    }
+    .set-toggle input:checked::after {
+      transform: translateX(20px);
+      background: var(--accent);
+    }
     .visually-hidden {
       position: absolute;
       width: 1px;
@@ -822,6 +864,11 @@
       </section>
       <section class="set-block">
         <h3>Bluetooth</h3>
+        <label class="set-toggle" for="autoReconn">
+          <span>Auto-reconnect</span>
+          <input type="checkbox" id="autoReconn" role="switch" checked>
+        </label>
+        <p class="set-hint">After the screen locks or the link drops, reconnect to the last stick. Does not scan. Stops if the stick is off.</p>
         <p class="set-hint">If Connect does nothing or the light stays yellow, pair EmergenceKey in your OS Bluetooth settings, then come back and tap the status.</p>
         <div class="pin-actions">
           <button type="button" class="btn" id="setScan">Scan all devices</button>
@@ -851,6 +898,9 @@
   const STORE_PIN = 'emergencekey-pin:';
   const STORE_PIN_SKIP = 'emergencekey-pin-skip:';
   const STORE_NAME = 'emergencekey-name:';
+  const STORE_AUTO = 'emergencekey-auto-reconnect';
+  const AUTO_MAX = 4;
+  const AUTO_BACKOFF_MS = [400, 1500, 4000, 10000];
   const PIN_UNLOCK = 0x30, PIN_SET = 0x31, PIN_CLEAR = 0x32;
   const CMD_HANGUP = 0x33;
   const HANGUP_WAIT_MS = 80;
@@ -873,7 +923,7 @@
   const pinFieldWrap = $('pinFieldWrap'), pinField2Wrap = $('pinField2Wrap');
   const setOverlay = $('setOverlay'), setPinMsg = $('setPinMsg');
   const setPinAction = $('setPinAction'), setPinForget = $('setPinForget');
-  const setScan = $('setScan'), setClose = $('setClose');
+  const setScan = $('setScan'), setClose = $('setClose'), autoReconn = $('autoReconn');
   const sensEl = $('sens'), sensVal = $('sensVal');
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
   document.documentElement.classList.toggle(
@@ -888,6 +938,9 @@
 
   let device = null, characteristic = null, statusChar = null, connected = false;
   let stickName = '';
+  let lastStickName = '';
+  let wantAuto = false, autoBusy = false, autoTimer = 0, autoAttempts = 0, autoGen = 0;
+  let autoStableTimer = 0;
   let hidReady = false, pinBusy = false, pinMode = '';
   let pinLast = null, pinCooldownTimer = 0;
   const pinWaiters = [];
@@ -940,10 +993,15 @@
     } else if (connected) {
       btnConn.title = 'Tap to disconnect. Hold / right-click to scan all.';
     } else if (state === 'connecting') {
-      devName.textContent = stickName || '';
+      devName.textContent = lastKnownName() || '';
       btnConn.title = 'Connecting…';
     } else {
-      devName.textContent = 'tap to connect';
+      const name = lastKnownName();
+      if (name && (canReconnect || (wantAuto && autoEnabled()))) {
+        devName.textContent = name;
+      } else {
+        devName.textContent = 'tap to connect';
+      }
       btnConn.title = 'Tap to connect. Hold / right-click to scan all.';
     }
   }
@@ -1064,6 +1122,8 @@
   });
   loadSens();
   syncSettingsPin();
+  syncAutoToggle();
+  lastStickName = loadSavedName(currentDeviceId());
 
   function sendMove(dx, dy) {
     moveAccX += dx * mouseSens;
@@ -1077,23 +1137,124 @@
   }
   function sendScroll(dx, dy) { send(0x04, sbyte(dx), sbyte(dy), true); }
 
+  function pageVisible() {
+    return document.visibilityState === 'visible';
+  }
+  function autoEnabled() {
+    try { return localStorage.getItem(STORE_AUTO) !== '0'; } catch (_) { return true; }
+  }
+  function saveAutoEnabled(on) {
+    try { localStorage.setItem(STORE_AUTO, on ? '1' : '0'); } catch (_) {}
+  }
+  function lastKnownName() {
+    return stickName || lastStickName || loadSavedName(currentDeviceId());
+  }
+  function syncAutoToggle() {
+    const on = autoEnabled();
+    autoReconn.checked = on;
+    autoReconn.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+  function markAutoStable() {
+    if (autoStableTimer) { clearTimeout(autoStableTimer); autoStableTimer = 0; }
+    autoStableTimer = setTimeout(() => {
+      autoStableTimer = 0;
+      autoAttempts = 0;
+    }, 2500);
+  }
+  function clearAutoTimer() {
+    if (autoTimer) { clearTimeout(autoTimer); autoTimer = 0; }
+  }
+  function cancelAutoReconnect() {
+    autoGen += 1;
+    autoBusy = false;
+    clearAutoTimer();
+  }
+  function scheduleAutoReconnect() {
+    if (!autoEnabled() || !wantAuto || connected || autoBusy) return;
+    if (!pageVisible()) return;
+    if (autoAttempts >= AUTO_MAX) return;
+    clearAutoTimer();
+    const gen = autoGen;
+    const delay = AUTO_BACKOFF_MS[Math.min(autoAttempts, AUTO_BACKOFF_MS.length - 1)];
+    autoTimer = setTimeout(() => {
+      autoTimer = 0;
+      tryAutoReconnect(gen);
+    }, delay);
+  }
+  async function tryAutoReconnect(gen) {
+    if (gen !== autoGen) return;
+    if (!autoEnabled() || !wantAuto || connected || autoBusy) return;
+    if (!pageVisible()) return;
+    if (autoAttempts >= AUTO_MAX) {
+      setStatus('disconnected', 'disconnected — tap to retry');
+      return;
+    }
+    const api = ble();
+    if (!api || (!(device && device.gatt) && typeof api.getDevices !== 'function')) {
+      return;
+    }
+    autoBusy = true;
+    autoAttempts += 1;
+    const ok = await reconnect();
+    if (gen !== autoGen) return;
+    autoBusy = false;
+    if (ok) return;
+    if (!pageVisible() || !autoEnabled() || !wantAuto) return;
+    if (autoAttempts < AUTO_MAX && (device || canReconnect)) {
+      const name = lastKnownName();
+      setStatus('disconnected', name ? 'disconnected — retrying…' : 'disconnected — link dropped');
+      scheduleAutoReconnect();
+      return;
+    }
+    setStatus('disconnected', 'disconnected — tap to retry');
+  }
+  function onPageAwake() {
+    if (!autoEnabled() || connected) return;
+    if (!wantAuto && !currentDeviceId() && !device) return;
+    if (!wantAuto && currentDeviceId()) wantAuto = true;
+    autoAttempts = 0;
+    scheduleAutoReconnect();
+  }
+  function maybeStartAutoReconnect() {
+    if (!autoEnabled() || connected || autoBusy) return;
+    if (!device && !currentDeviceId()) return;
+    wantAuto = true;
+    if (!pageVisible()) return;
+    if (autoTimer) return;
+    if (autoAttempts >= AUTO_MAX) autoAttempts = 0;
+    scheduleAutoReconnect();
+  }
+
   function onDisconnected() {
+    const alreadyDown = !connected && !characteristic && !hidReady;
+    if (alreadyDown) {
+      refreshReconnect();
+      return;
+    }
+    if (stickName) lastStickName = stickName;
     connected = false;
     hidReady = false;
     pinBusy = false;
     pinWaiters.length = 0;
     stickName = '';
+    if (autoStableTimer) { clearTimeout(autoStableTimer); autoStableTimer = 0; }
     dropPinChar();
     hidePinOverlay();
     characteristic = null;
     queue.length = 0;
-    setStatus('disconnected', 'disconnected — link dropped');
+    const retry = autoEnabled() && wantAuto;
+    setStatus('disconnected', retry ? 'disconnected — reconnecting…' : 'disconnected — link dropped');
     refreshReconnect();
     if (capturing) exitCapture();
+    if (retry && pageVisible() && !autoBusy) scheduleAutoReconnect();
   }
 
   function bindDevice(dev) {
+    if (device && device !== dev) {
+      try { device.removeEventListener('gattserverdisconnected', onDisconnected); } catch (_) {}
+    }
     device = dev;
+    device.removeEventListener('gattserverdisconnected', onDisconnected);
     device.addEventListener('gattserverdisconnected', onDisconnected);
     try { localStorage.setItem(STORE, device.id); } catch (_) {}
   }
@@ -1142,6 +1303,8 @@
   // Do not call from gattserverdisconnected — that is already too late.
   // Tab close cannot reliably get this write through.
   async function hangupThenDisconnect() {
+    wantAuto = false;
+    cancelAutoReconnect();
     queue.length = 0;
     pinBusy = true;
     const waitUntil = Date.now() + 200;
@@ -1262,6 +1425,7 @@
   function showSettings() {
     hidePinOverlay();
     syncSettingsPin();
+    syncAutoToggle();
     setOverlay.classList.add('show');
     btnSettings.classList.add('on');
     btnSettings.setAttribute('aria-expanded', 'true');
@@ -1637,6 +1801,21 @@
     if (connected && device) await hangupThenDisconnect();
     connect(true);
   });
+  autoReconn.addEventListener('change', () => {
+    const on = autoReconn.checked;
+    saveAutoEnabled(on);
+    autoReconn.setAttribute('aria-checked', on ? 'true' : 'false');
+    if (!on) {
+      cancelAutoReconnect();
+      if (!connected) setStatus('disconnected');
+      return;
+    }
+    if (!connected && (device || currentDeviceId())) {
+      wantAuto = true;
+      autoAttempts = 0;
+      scheduleAutoReconnect();
+    }
+  });
   function digitsOnly(el) {
     el.addEventListener('input', () => {
       el.value = el.value.replace(/\D/g, '').slice(0, 8);
@@ -1662,10 +1841,14 @@
       readGapName(server),
     ]);
     stickName = resolveStickName(dev, gapName);
+    lastStickName = stickName;
     characteristic = await service.getCharacteristic(WRITE);
     connected = true;
     hidReady = false;
     canReconnect = false;
+    wantAuto = true;
+    cancelAutoReconnect();
+    markAutoStable();
     try {
       await attachPin(service, dev);
     } catch (_) {
@@ -1676,6 +1859,7 @@
   }
 
   async function connect(scanAll) {
+    cancelAutoReconnect();
     const api = ble();
     if (!api || typeof api.requestDevice !== 'function') {
       setStatus('error', ios ? 'enable beacio: aA → Extensions' : 'no Web Bluetooth');
@@ -1706,31 +1890,40 @@
       } else {
         setStatus('error', (err && err.message) || 'connect failed');
       }
+      if (wantAuto && autoEnabled()) scheduleAutoReconnect();
     }
   }
 
   async function reconnect() {
     const api = ble();
-    if (!api || !api.getDevices) return false;
+    if (!api) return false;
+    const name = lastKnownName();
+    setStatus('connecting', name ? 'reconnecting…' : 'connecting…');
+    if (name) devName.textContent = name;
     try {
-      setStatus('connecting');
-      const id = localStorage.getItem(STORE);
-      const list = await api.getDevices();
-      const dev = list.find((d) => d.id === id) || list[0];
-      if (!dev) return false;
+      let dev = (device && device.gatt) ? device : null;
+      if (!dev) {
+        if (typeof api.getDevices !== 'function') return false;
+        const id = currentDeviceId();
+        const list = await api.getDevices();
+        dev = (id && list.find((d) => d.id === id)) || (list.length === 1 ? list[0] : null);
+        if (!dev) return false;
+      }
       await gattConnect(dev);
-      return true;
+      return !!(connected && device && device.gatt && device.gatt.connected);
     } catch (_) {
       return false;
     }
   }
 
   async function linkUp() {
+    cancelAutoReconnect();
     if (connected && device) {
       await connect(false);
       return;
     }
     if (canReconnect && await reconnect()) return;
+    if (device && device.gatt && await reconnect()) return;
     await connect(false);
   }
 
@@ -1751,8 +1944,16 @@
     if (gen !== reGen) return;
     canReconnect = show;
     if (!connected) {
-      devName.textContent = 'tap to connect';
-      btnConn.title = 'Tap to connect. Hold / right-click to scan all.';
+      const name = lastKnownName();
+      if (name && (show || (wantAuto && autoEnabled()))) {
+        devName.textContent = name;
+        btnConn.title = wantAuto && autoEnabled()
+          ? 'Auto-reconnect on. Tap to connect now. Hold / right-click to scan all.'
+          : 'Tap to connect. Hold / right-click to scan all.';
+      } else {
+        devName.textContent = 'tap to connect';
+        btnConn.title = 'Tap to connect. Hold / right-click to scan all.';
+      }
     }
   }
 
@@ -2356,6 +2557,7 @@
       unsupported.classList.remove('show');
       unsupported.textContent = '';
       refreshReconnect();
+      maybeStartAutoReconnect();
       return;
     }
     showBleHelp();
@@ -2371,6 +2573,11 @@
   btnConn.title = 'Tap to connect. Hold / right-click to scan all.';
   // iOS: banner skipped above; still probe reconnect once BLE polyfill may be ready.
   if (ios) refreshReconnect();
+  document.addEventListener('visibilitychange', () => {
+    if (pageVisible()) onPageAwake();
+  });
+  window.addEventListener('pageshow', onPageAwake);
+  maybeStartAutoReconnect();
 })();
 </script>
 </body>
