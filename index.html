@@ -773,19 +773,19 @@
     <div class="qwerty-wrap">
     <div class="qwerty">
       <div class="row">
-        <button class="key ck" data-key="0x35">`</button>
-        <button class="key ck" data-key="0x1E">1</button>
-        <button class="key ck" data-key="0x1F">2</button>
-        <button class="key ck" data-key="0x20">3</button>
-        <button class="key ck" data-key="0x21">4</button>
-        <button class="key ck" data-key="0x22">5</button>
-        <button class="key ck" data-key="0x23">6</button>
-        <button class="key ck" data-key="0x24">7</button>
-        <button class="key ck" data-key="0x25">8</button>
-        <button class="key ck" data-key="0x26">9</button>
-        <button class="key ck" data-key="0x27">0</button>
-        <button class="key ck" data-key="0x2D">-</button>
-        <button class="key ck" data-key="0x2E">=</button>
+        <button class="key ck" data-key="0x35" data-shift="~">`</button>
+        <button class="key ck" data-key="0x1E" data-shift="!">1</button>
+        <button class="key ck" data-key="0x1F" data-shift="@">2</button>
+        <button class="key ck" data-key="0x20" data-shift="#">3</button>
+        <button class="key ck" data-key="0x21" data-shift="$">4</button>
+        <button class="key ck" data-key="0x22" data-shift="%">5</button>
+        <button class="key ck" data-key="0x23" data-shift="^">6</button>
+        <button class="key ck" data-key="0x24" data-shift="&amp;">7</button>
+        <button class="key ck" data-key="0x25" data-shift="*">8</button>
+        <button class="key ck" data-key="0x26" data-shift="(">9</button>
+        <button class="key ck" data-key="0x27" data-shift=")">0</button>
+        <button class="key ck" data-key="0x2D" data-shift="_">-</button>
+        <button class="key ck" data-key="0x2E" data-shift="+">=</button>
         <button class="key wide" data-key="0x2A">⌫</button>
       </div>
       <div class="row">
@@ -800,9 +800,9 @@
         <button class="key ck" data-key="0x0C">I</button>
         <button class="key ck" data-key="0x12">O</button>
         <button class="key ck" data-key="0x13">P</button>
-        <button class="key ck" data-key="0x2F">[</button>
-        <button class="key ck" data-key="0x30">]</button>
-        <button class="key ck" data-key="0x31">\</button>
+        <button class="key ck" data-key="0x2F" data-shift="{">[</button>
+        <button class="key ck" data-key="0x30" data-shift="}">]</button>
+        <button class="key ck" data-key="0x31" data-shift="|">\</button>
       </div>
       <div class="row">
         <button class="key wide" id="keyCaps" data-key="0x39">Caps</button>
@@ -815,8 +815,8 @@
         <button class="key ck" data-key="0x0D">J</button>
         <button class="key ck" data-key="0x0E">K</button>
         <button class="key ck" data-key="0x0F">L</button>
-        <button class="key ck" data-key="0x33">;</button>
-        <button class="key ck" data-key="0x34">'</button>
+        <button class="key ck" data-key="0x33" data-shift=":">;</button>
+        <button class="key ck" data-key="0x34" data-shift="&quot;">'</button>
         <button class="key wide2" data-key="0x28">Enter</button>
       </div>
       <div class="row">
@@ -828,9 +828,9 @@
         <button class="key ck" data-key="0x05">B</button>
         <button class="key ck" data-key="0x11">N</button>
         <button class="key ck" data-key="0x10">M</button>
-        <button class="key ck" data-key="0x36">,</button>
-        <button class="key ck" data-key="0x37">.</button>
-        <button class="key ck" data-key="0x38">/</button>
+        <button class="key ck" data-key="0x36" data-shift="&lt;">,</button>
+        <button class="key ck" data-key="0x37" data-shift="&gt;">.</button>
+        <button class="key ck" data-key="0x38" data-shift="?">/</button>
         <button class="key wide" data-mod="2">Shift</button>
       </div>
       <div class="row bottomrow">
@@ -2485,8 +2485,20 @@
     });
   });
 
+  const physShift = new Set();
+  function shiftLatched() {
+    return !!(stickyMod & 2) || physShift.size > 0;
+  }
+  function paintShiftLayer() {
+    const on = shiftLatched();
+    document.querySelectorAll('.key[data-shift]').forEach((btn) => {
+      if (!btn.dataset.unshift) btn.dataset.unshift = btn.textContent;
+      btn.textContent = on ? btn.dataset.shift : btn.dataset.unshift;
+    });
+  }
   function setModState(bit, on) {
     document.querySelectorAll(`[data-mod="${bit}"]`).forEach((b) => b.classList.toggle('on', on));
+    if (bit === 2) paintShiftLayer();
   }
   document.querySelectorAll('[data-mod]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -2821,6 +2833,11 @@
     if (e.repeat) return;
     if (MOD_BIT[e.code]) {
       highlightMod(MOD_BIT[e.code], down);
+      if (MOD_BIT[e.code] === 2) {
+        if (down) physShift.add(e.code);
+        else physShift.delete(e.code);
+        paintShiftLayer();
+      }
       return;
     }
     const hid = CODE_HID[e.code];
@@ -2894,6 +2911,8 @@
     if (!capturing) return;
     capturing = false;
     liveMod = 0;
+    physShift.clear();
+    paintShiftLayer();
     clearKeyPressed();
     window.removeEventListener('keydown', onCapturedKeyDown, true);
     window.removeEventListener('keyup', onCapturedKeyUp, true);
